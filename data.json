@@ -1,0 +1,59 @@
+{
+  "hostels": [
+    {
+      "id": "1760592752791",
+      "name": "TLR",
+      "address": "Hyderabad",
+      "planType": "free_trial",
+      "planStatus": "trial",
+      "trialExpiryDate": "2025-11-15",
+      "adminName": "Venkatesh Panuganti",
+      "adminEmail": "vpanuganti13@gmail.com",
+      "adminPhone": "9908227236",
+      "status": "active",
+      "totalRooms": 0,
+      "occupiedRooms": 0,
+      "createdAt": "2025-10-16T05:32:32.792Z",
+      "updatedAt": "2025-10-16T05:32:32.792Z"
+    }
+  ],
+  "tenants": [],
+  "rooms": [],
+  "payments": [],
+  "complaints": [],
+  "users": [
+    {
+      "id": "1760592752808",
+      "name": "Venkatesh Panuganti",
+      "email": "vpanuganti13@gmail.com",
+      "phone": "9908227236",
+      "role": "admin",
+      "password": "adminpkenqv",
+      "hostelId": "1760592752791",
+      "hostelName": "TLR",
+      "status": "active",
+      "createdAt": "2025-10-16T05:32:32.792Z",
+      "updatedAt": "2025-10-16T05:32:32.792Z"
+    }
+  ],
+  "expenses": [],
+  "staff": [],
+  "hostelRequests": [
+    {
+      "name": "Venkatesh Panuganti",
+      "email": "vpanuganti13@gmail.com",
+      "phone": "9908227236",
+      "hostelName": "TLR",
+      "address": "Hyderabad",
+      "planType": "free_trial",
+      "message": "",
+      "status": "approved",
+      "isRead": true,
+      "submittedAt": "2025-10-16T05:31:15.818Z",
+      "createdAt": "2025-10-16T05:31:15.818Z",
+      "updatedAt": "2025-10-16T05:31:27.784Z",
+      "processedAt": "2025-10-16T05:32:32.792Z",
+      "id": "1760592675834"
+    }
+  ]
+}
