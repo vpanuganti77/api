@@ -3,7 +3,7 @@ const cors = require('cors');
 const db = require('./database');
 
 const app = express();
-const PORT = 5000;
+const PORT = process.env.PORT || 5000;
 
 app.use(cors());
 app.use(express.json());
@@ -79,9 +79,8 @@ entities.forEach(entity => {
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`SQLite Server running on http://localhost:${PORT}`);
-  console.log('Database: hostel.db');
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`✅ Server is running on port ${PORT}`);
 });
 
 module.exports = app;
