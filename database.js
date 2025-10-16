@@ -141,6 +141,18 @@ class Database {
         createdAt TEXT,
         updatedAt TEXT
       )`);
+
+      this.db.run(`CREATE TABLE IF NOT EXISTS notices (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        message TEXT NOT NULL,
+        priority TEXT DEFAULT 'normal',
+        hostelId TEXT,
+        createdBy TEXT,
+        status TEXT DEFAULT 'active',
+        createdAt TEXT,
+        updatedAt TEXT
+      )`);
     });
   }
 
@@ -169,7 +181,7 @@ class Database {
   }
 
   create(table, data) {
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
       const now = new Date().toISOString();
       
       // Clean data - remove unwanted fields and handle special cases
@@ -190,6 +202,23 @@ class Database {
         updatedAt: cleanData.updatedAt || now 
       };
       
+      // Check for unique constraints
+      try {
+        const uniqueFields = this.getUniqueFields(table);
+        for (const field of uniqueFields) {
+          if (item[field]) {
+            const existing = await this.findByField(table, field, item[field]);
+            if (existing) {
+              reject(new Error(`${field} '${item[field]}' already exists`));
+              return;
+            }
+          }
+        }
+      } catch (uniqueError) {
+        reject(uniqueError);
+        return;
+      }
+      
       console.log(`Creating ${table} with data:`, item);
       
       const keys = Object.keys(item);
@@ -203,7 +232,11 @@ class Database {
       this.db.run(query, values, function(err) {
         if (err) {
           console.error(`SQLite error creating ${table}:`, err);
-          reject(err);
+          if (err.message.includes('UNIQUE constraint failed')) {
+            reject(new Error('Record with this information already exists'));
+          } else {
+            reject(err);
+          }
         } else {
           console.log(`Successfully created ${table} with id:`, item.id);
           // Parse arrays back for response
@@ -255,6 +288,26 @@ class Database {
         else resolve(row);
       });
     });
+  }
+
+  findByField(table, field, value) {
+    return new Promise((resolve, reject) => {
+      this.db.get(`SELECT * FROM ${table} WHERE ${field} = ?`, [value], (err, row) => {
+        if (err) reject(err);
+        else resolve(row);
+      });
+    });
+  }
+
+  getUniqueFields(table) {
+    const uniqueConstraints = {
+      users: ['email'],
+      tenants: ['email', 'phone'],
+      rooms: ['roomNumber'],
+      staff: ['phone'],
+      hostelRequests: ['email']
+    };
+    return uniqueConstraints[table] || [];
   }
 }
 

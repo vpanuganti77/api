@@ -3,13 +3,13 @@ const cors = require('cors');
 const db = require('./database');
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = 5000;
 
 app.use(cors());
 app.use(express.json());
 
 // Generic routes for all entities
-const entities = ['hostels', 'tenants', 'rooms', 'payments', 'complaints', 'users', 'expenses', 'staff', 'hostelRequests'];
+const entities = ['hostels', 'tenants', 'rooms', 'payments', 'complaints', 'users', 'expenses', 'staff', 'hostelRequests', 'notices'];
 
 entities.forEach(entity => {
   // GET all
@@ -31,7 +31,11 @@ entities.forEach(entity => {
       res.json(newItem);
     } catch (error) {
       console.error(`Error creating ${entity}:`, error);
-      res.status(500).json({ error: error.message });
+      if (error.message.includes('already exists') || error.message.includes('UNIQUE constraint')) {
+        res.status(409).json({ error: error.message });
+      } else {
+        res.status(500).json({ error: error.message });
+      }
     }
   });
 
@@ -79,8 +83,9 @@ entities.forEach(entity => {
   });
 });
 
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`✅ Server is running on port ${PORT}`);
+app.listen(PORT, () => {
+  console.log(`SQLite Server running on http://localhost:${PORT}`);
+  console.log('Database: hostel.db');
 });
 
 module.exports = app;
