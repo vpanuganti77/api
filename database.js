@@ -185,8 +185,11 @@ class Database {
   updateSchema() {
     // Add missing columns to existing tables
     const alterQueries = [
+      // Tenants table - all possible fields
       'ALTER TABLE tenants ADD COLUMN gender TEXT',
-      'ALTER TABLE tenants ADD COLUMN room TEXT', 
+      'ALTER TABLE tenants ADD COLUMN room TEXT',
+      'ALTER TABLE tenants ADD COLUMN roomId TEXT',
+      'ALTER TABLE tenants ADD COLUMN roomType TEXT',
       'ALTER TABLE tenants ADD COLUMN rent REAL',
       'ALTER TABLE tenants ADD COLUMN deposit REAL',
       'ALTER TABLE tenants ADD COLUMN joiningDate TEXT',
@@ -196,19 +199,35 @@ class Database {
       'ALTER TABLE tenants ADD COLUMN pendingDues REAL DEFAULT 0',
       'ALTER TABLE tenants ADD COLUMN lastModifiedBy TEXT',
       'ALTER TABLE tenants ADD COLUMN lastModifiedDate TEXT',
+      
+      // Payments table
       'ALTER TABLE payments ADD COLUMN paymentDate TEXT',
-      'ALTER TABLE payments ADD COLUMN paymentMethod TEXT', 
+      'ALTER TABLE payments ADD COLUMN paymentMethod TEXT',
       'ALTER TABLE payments ADD COLUMN transactionId TEXT',
+      'ALTER TABLE payments ADD COLUMN type TEXT',
+      'ALTER TABLE payments ADD COLUMN notes TEXT',
+      
+      // Complaints table
       'ALTER TABLE complaints ADD COLUMN room TEXT',
+      'ALTER TABLE complaints ADD COLUMN tenantName TEXT',
+      'ALTER TABLE complaints ADD COLUMN tenantPhone TEXT',
+      'ALTER TABLE complaints ADD COLUMN hostel TEXT',
+      
+      // Expenses table
       'ALTER TABLE expenses ADD COLUMN description TEXT',
       'ALTER TABLE expenses ADD COLUMN addedBy TEXT',
+      
+      // Staff table
       'ALTER TABLE staff ADD COLUMN email TEXT',
       'ALTER TABLE staff ADD COLUMN joiningDate TEXT',
       'ALTER TABLE staff ADD COLUMN shift TEXT',
       'ALTER TABLE staff ADD COLUMN emergencyContact TEXT',
       'ALTER TABLE staff ADD COLUMN address TEXT',
       'ALTER TABLE staff ADD COLUMN lastModifiedBy TEXT',
-      'ALTER TABLE staff ADD COLUMN lastModifiedDate TEXT'
+      'ALTER TABLE staff ADD COLUMN lastModifiedDate TEXT',
+      
+      // Hostels table
+      'ALTER TABLE hostels ADD COLUMN features TEXT'
     ];
     
     alterQueries.forEach(query => {
