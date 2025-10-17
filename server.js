@@ -83,9 +83,23 @@ entities.forEach(entity => {
   });
 });
 
+// Auto-create demo data on startup
+const initializeDemoData = async () => {
+  try {
+    console.log('Refreshing demo data on startup...');
+    const createCompleteDemo = require('./createCompleteDemo');
+    await createCompleteDemo();
+    console.log('Demo data refreshed successfully!');
+  } catch (error) {
+    console.error('Error refreshing demo data:', error);
+  }
+};
 
-app.listen(PORT, "0.0.0.0", () => {
+
+app.listen(PORT, "0.0.0.0", async () => {
   console.log(`✅ Server is running on port ${PORT}`);
+    // Initialize demo data
+  await initializeDemoData();
 });
 
 module.exports = app;
