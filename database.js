@@ -221,6 +221,9 @@ class Database {
       'ALTER TABLE complaints ADD COLUMN resolvedBy TEXT',
       'ALTER TABLE complaints ADD COLUMN images TEXT',
       'ALTER TABLE complaints ADD COLUMN urgency TEXT',
+      'ALTER TABLE complaints ADD COLUMN resolutionNotes TEXT',
+      'ALTER TABLE complaints ADD COLUMN lastModifiedBy TEXT',
+      'ALTER TABLE complaints ADD COLUMN lastModifiedDate TEXT',
       
       // Expenses table
       'ALTER TABLE expenses ADD COLUMN description TEXT',
