@@ -3,7 +3,7 @@ const cors = require('cors');
 const db = require('./database');
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 8080;
 
 app.use(cors());
 app.use(express.json());
@@ -96,10 +96,22 @@ const initializeDemoData = async () => {
 };
 
 
+// Demo data creation endpoint
+app.post('/api/create-demo-data', async (req, res) => {
+  try {
+    const createCompleteDemo = require('./createCompleteDemo');
+    await createCompleteDemo();
+    res.json({ message: 'Demo data created successfully' });
+  } catch (error) {
+    console.error('Error creating demo data:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.listen(PORT, "0.0.0.0", async () => {
   console.log(`✅ Server is running on port ${PORT}`);
     // Initialize demo data
-  await initializeDemoData();
+  // await initializeDemoData();
 });
 
 module.exports = app;
