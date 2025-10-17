@@ -28,7 +28,6 @@ const createCompleteDemo = async () => {
       planType: 'premium',
       status: 'active',
       trialExpiryDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
-      features: ['tenant_management', 'room_management', 'payment_tracking', 'complaint_system'],
       createdAt: new Date().toISOString()
     });
 
