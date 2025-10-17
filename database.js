@@ -176,6 +176,47 @@ class Database {
         createdAt TEXT,
         updatedAt TEXT
       )`);
+      
+      // Run schema updates after table creation
+      this.updateSchema();
+    });
+  }
+
+  updateSchema() {
+    // Add missing columns to existing tables
+    const alterQueries = [
+      'ALTER TABLE tenants ADD COLUMN gender TEXT',
+      'ALTER TABLE tenants ADD COLUMN room TEXT', 
+      'ALTER TABLE tenants ADD COLUMN rent REAL',
+      'ALTER TABLE tenants ADD COLUMN deposit REAL',
+      'ALTER TABLE tenants ADD COLUMN joiningDate TEXT',
+      'ALTER TABLE tenants ADD COLUMN aadharNumber TEXT',
+      'ALTER TABLE tenants ADD COLUMN aadharFront TEXT',
+      'ALTER TABLE tenants ADD COLUMN aadharBack TEXT',
+      'ALTER TABLE tenants ADD COLUMN pendingDues REAL DEFAULT 0',
+      'ALTER TABLE tenants ADD COLUMN lastModifiedBy TEXT',
+      'ALTER TABLE tenants ADD COLUMN lastModifiedDate TEXT',
+      'ALTER TABLE payments ADD COLUMN paymentDate TEXT',
+      'ALTER TABLE payments ADD COLUMN paymentMethod TEXT', 
+      'ALTER TABLE payments ADD COLUMN transactionId TEXT',
+      'ALTER TABLE complaints ADD COLUMN room TEXT',
+      'ALTER TABLE expenses ADD COLUMN description TEXT',
+      'ALTER TABLE expenses ADD COLUMN addedBy TEXT',
+      'ALTER TABLE staff ADD COLUMN email TEXT',
+      'ALTER TABLE staff ADD COLUMN joiningDate TEXT',
+      'ALTER TABLE staff ADD COLUMN shift TEXT',
+      'ALTER TABLE staff ADD COLUMN emergencyContact TEXT',
+      'ALTER TABLE staff ADD COLUMN address TEXT',
+      'ALTER TABLE staff ADD COLUMN lastModifiedBy TEXT',
+      'ALTER TABLE staff ADD COLUMN lastModifiedDate TEXT'
+    ];
+    
+    alterQueries.forEach(query => {
+      this.db.run(query, (err) => {
+        if (err && !err.message.includes('duplicate column name')) {
+          console.log('Schema update note:', err.message);
+        }
+      });
     });
   }
 
