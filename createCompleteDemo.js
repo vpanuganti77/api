@@ -1,7 +1,6 @@
-const Database = require('./database');
+const db = require('./database');
 
 const createCompleteDemo = async () => {
-  const db = new Database();
   const hostelId = 'demo-hostel-001';
   
   try {
