@@ -207,6 +207,8 @@ class Database {
       'ALTER TABLE payments ADD COLUMN type TEXT',
       'ALTER TABLE payments ADD COLUMN notes TEXT',
       'ALTER TABLE payments ADD COLUMN tenantName TEXT',
+      'ALTER TABLE payments ADD COLUMN lastModifiedBy TEXT',
+      'ALTER TABLE payments ADD COLUMN lastModifiedDate TEXT',
       
       // Complaints table
       'ALTER TABLE complaints ADD COLUMN room TEXT',
@@ -214,6 +216,11 @@ class Database {
       'ALTER TABLE complaints ADD COLUMN tenantPhone TEXT',
       'ALTER TABLE complaints ADD COLUMN hostel TEXT',
       'ALTER TABLE complaints ADD COLUMN assignedTo TEXT',
+      'ALTER TABLE complaints ADD COLUMN adminNotes TEXT',
+      'ALTER TABLE complaints ADD COLUMN resolvedAt TEXT',
+      'ALTER TABLE complaints ADD COLUMN resolvedBy TEXT',
+      'ALTER TABLE complaints ADD COLUMN images TEXT',
+      'ALTER TABLE complaints ADD COLUMN urgency TEXT',
       
       // Expenses table
       'ALTER TABLE expenses ADD COLUMN description TEXT',
