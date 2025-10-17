@@ -281,6 +281,15 @@ class Database {
     });
   }
 
+  deleteAll(table) {
+    return new Promise((resolve, reject) => {
+      this.db.run(`DELETE FROM ${table}`, function(err) {
+        if (err) reject(err);
+        else resolve({ deleted: this.changes });
+      });
+    });
+  }
+
   findById(table, id) {
     return new Promise((resolve, reject) => {
       this.db.get(`SELECT * FROM ${table} WHERE id = ?`, [id], (err, row) => {
