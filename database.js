@@ -206,12 +206,14 @@ class Database {
       'ALTER TABLE payments ADD COLUMN transactionId TEXT',
       'ALTER TABLE payments ADD COLUMN type TEXT',
       'ALTER TABLE payments ADD COLUMN notes TEXT',
+      'ALTER TABLE payments ADD COLUMN tenantName TEXT',
       
       // Complaints table
       'ALTER TABLE complaints ADD COLUMN room TEXT',
       'ALTER TABLE complaints ADD COLUMN tenantName TEXT',
       'ALTER TABLE complaints ADD COLUMN tenantPhone TEXT',
       'ALTER TABLE complaints ADD COLUMN hostel TEXT',
+      'ALTER TABLE complaints ADD COLUMN assignedTo TEXT',
       
       // Expenses table
       'ALTER TABLE expenses ADD COLUMN description TEXT',
