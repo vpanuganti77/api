@@ -229,6 +229,7 @@ class Database {
       'ALTER TABLE complaints ADD COLUMN submittedBy TEXT',
       'ALTER TABLE complaints ADD COLUMN estimatedCost REAL',
       'ALTER TABLE complaints ADD COLUMN actualCost REAL',
+      'ALTER TABLE complaints ADD COLUMN isOverdue INTEGER DEFAULT 0',
       
       // Expenses table
       'ALTER TABLE expenses ADD COLUMN description TEXT',
