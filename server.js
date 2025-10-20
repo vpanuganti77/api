@@ -349,7 +349,7 @@ entities.forEach(entity => {
           newItem.userCredentials = {
             email: tenantUser.email,
             password: password,
-            loginUrl: `${req.protocol}://${req.get('host')}/auth/login?email=${encodeURIComponent(tenantUser.email)}&password=${encodeURIComponent(password)}`
+            loginUrl: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/login?email=${encodeURIComponent(tenantUser.email)}&password=${encodeURIComponent(password)}`
           };
         }
       }
