@@ -41,6 +41,44 @@ const createCompleteDemo = async () => {
       role: 'admin',
       hostelId: hostelId,
       status: 'active',
+      failedLoginAttempts: 0,
+      isLocked: false,
+      lockedAt: null,
+      lockedBy: null,
+      createdAt: new Date().toISOString()
+    });
+
+    // Create additional users for testing
+    await db.create('users', {
+      id: 'demo-user-002',
+      name: 'Demo Tenant',
+      email: 'tenant@demo.com',
+      password: 'tenant123',
+      phone: '9876543211',
+      role: 'tenant',
+      hostelId: hostelId,
+      status: 'active',
+      failedLoginAttempts: 0,
+      isLocked: false,
+      lockedAt: null,
+      lockedBy: null,
+      createdAt: new Date().toISOString()
+    });
+
+    // Create a locked user for testing
+    await db.create('users', {
+      id: 'demo-user-003',
+      name: 'Locked User',
+      email: 'locked@demo.com',
+      password: 'locked123',
+      phone: '9876543212',
+      role: 'tenant',
+      hostelId: hostelId,
+      status: 'active',
+      failedLoginAttempts: 3,
+      isLocked: true,
+      lockedAt: new Date().toISOString(),
+      lockedBy: 'system',
       createdAt: new Date().toISOString()
     });
 

@@ -245,7 +245,13 @@ class Database {
       'ALTER TABLE staff ADD COLUMN lastModifiedDate TEXT',
       
       // Hostels table
-      'ALTER TABLE hostels ADD COLUMN features TEXT'
+      'ALTER TABLE hostels ADD COLUMN features TEXT',
+      
+      // Users table - account locking fields
+      'ALTER TABLE users ADD COLUMN failedLoginAttempts INTEGER DEFAULT 0',
+      'ALTER TABLE users ADD COLUMN isLocked INTEGER DEFAULT 0',
+      'ALTER TABLE users ADD COLUMN lockedAt TEXT',
+      'ALTER TABLE users ADD COLUMN lockedBy TEXT'
     ];
     
     alterQueries.forEach(query => {
