@@ -15,11 +15,15 @@ const DATA_FILE = path.join(__dirname, 'data.json');
 const connectedUsers = new Map();
 
 wss.on('connection', (ws) => {
+  console.log('New WebSocket connection established');
+  
   ws.on('message', (message) => {
     try {
       const data = JSON.parse(message);
       if (data.type === 'join') {
         connectedUsers.set(ws, data.data);
+        console.log('User joined:', data.data);
+        console.log('Total connected users:', connectedUsers.size);
       }
     } catch (error) {
       console.error('Error parsing message:', error);
@@ -28,17 +32,29 @@ wss.on('connection', (ws) => {
   
   ws.on('close', () => {
     connectedUsers.delete(ws);
+    console.log('User disconnected. Total connected users:', connectedUsers.size);
   });
 });
 
 // Helper function to send notifications
 const sendNotification = (notification, targetRole, hostelId = null) => {
+  console.log(`Sending notification to role: ${targetRole}, hostelId: ${hostelId}`);
+  console.log('Notification:', notification);
+  console.log('Connected users:', Array.from(connectedUsers.values()));
+  
+  let sentCount = 0;
   connectedUsers.forEach((userData, ws) => {
+    console.log(`Checking user: ${userData.name} (${userData.role}) - hostelId: ${userData.hostelId}`);
+    
     if (ws.readyState === WebSocket.OPEN && userData.role === targetRole && 
         (hostelId === null || userData.hostelId === hostelId || userData.hostelId === String(hostelId))) {
       ws.send(JSON.stringify({ type: 'notification', payload: notification }));
+      sentCount++;
+      console.log(`Notification sent to: ${userData.name}`);
     }
   });
+  
+  console.log(`Total notifications sent: ${sentCount}`);
 };
 
 app.use(cors());
@@ -252,16 +268,25 @@ app.post('/api/auth/login', async (req, res) => {
       }
     }
     
-    // For tenant users, also get tenant data to ensure hostelId is available
+    // For tenant users, also get tenant data to ensure hostelId and room are available
     if (user.role === 'tenant') {
       const tenant = data.tenants.find(t => t.email === user.email || t.name === user.name);
-      if (tenant && tenant.hostelId && !user.hostelId) {
-        const hostel = data.hostels.find(h => h.id === tenant.hostelId);
-        if (hostel) {
+      if (tenant) {
+        if (tenant.hostelId && !user.hostelId) {
+          const hostel = data.hostels.find(h => h.id === tenant.hostelId);
+          if (hostel) {
+            hostelInfo = {
+              hostelId: hostel.id,
+              hostelName: hostel.name,
+              hostelAddress: hostel.address
+            };
+          }
+        }
+        // Add room information from tenant data
+        if (tenant.room) {
           hostelInfo = {
-            hostelId: hostel.id,
-            hostelName: hostel.name,
-            hostelAddress: hostel.address
+            ...hostelInfo,
+            room: tenant.room
           };
         }
       }
@@ -275,6 +300,181 @@ app.post('/api/auth/login', async (req, res) => {
   } catch (error) {
     console.error('Login error:', error);
     res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Test notification endpoint
+app.post('/api/test-notification', async (req, res) => {
+  try {
+    const { targetRole, hostelId, message } = req.body;
+    
+    sendNotification({
+      type: 'test',
+      title: 'Test Notification',
+      message: message || 'This is a test notification',
+      priority: 'medium',
+      createdAt: new Date().toISOString()
+    }, targetRole, hostelId);
+    
+    res.json({ message: 'Test notification sent', connectedUsers: connectedUsers.size });
+  } catch (error) {
+    console.error('Test notification error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Add comment to complaint endpoint
+app.post('/api/complaints/:id/comments', async (req, res) => {
+  try {
+    const { comment, author, role } = req.body;
+    
+    if (!comment || !author || !role) {
+      return res.status(400).json({ error: 'Comment, author, and role are required' });
+    }
+    
+    const data = await readData();
+    const complaintIndex = data.complaints.findIndex(c => c.id === req.params.id);
+    
+    if (complaintIndex === -1) {
+      return res.status(404).json({ error: 'Complaint not found' });
+    }
+    
+    const complaint = data.complaints[complaintIndex];
+    
+    // Initialize comments array if it doesn't exist
+    if (!complaint.comments) {
+      complaint.comments = [];
+    }
+    
+    // Add new comment
+    const newComment = {
+      id: Date.now().toString(),
+      comment,
+      author,
+      role,
+      createdAt: new Date().toISOString()
+    };
+    
+    complaint.comments.push(newComment);
+    complaint.updatedAt = new Date().toISOString();
+    
+    await writeData(data);
+    
+    // Send notification to the other party
+    const targetRole = role === 'tenant' ? 'admin' : 'tenant';
+    const targetHostelId = role === 'tenant' ? complaint.hostelId : null;
+    
+    if (role === 'admin') {
+      // Admin commented, notify the specific tenant
+      const tenant = data.tenants.find(t => t.name === complaint.tenantName && t.hostelId === complaint.hostelId);
+      if (tenant) {
+        const tenantUser = data.users.find(u => u.name === tenant.name && u.role === 'tenant' && u.hostelId === complaint.hostelId);
+        if (tenantUser) {
+          connectedUsers.forEach((userData, ws) => {
+            if (ws.readyState === WebSocket.OPEN && 
+                userData.role === 'tenant' && 
+                userData.hostelId === complaint.hostelId &&
+                userData.name === tenantUser.name) {
+              ws.send(JSON.stringify({ 
+                type: 'notification', 
+                payload: {
+                  type: 'complaint_comment',
+                  title: 'New Comment on Your Complaint',
+                  message: `Admin added a comment to your complaint "${complaint.title}"`,
+                  priority: 'medium',
+                  createdAt: newComment.createdAt,
+                  complaintId: complaint.id,
+                  url: `/tenant/complaints?complaintId=${complaint.id}&openComments=true`
+                }
+              }));
+            }
+          });
+        }
+      }
+    } else {
+      // Tenant commented, notify admin
+      sendNotification({
+        type: 'complaint_comment',
+        title: 'New Comment on Complaint',
+        message: `${author} added a comment to complaint "${complaint.title}"`,
+        priority: 'medium',
+        createdAt: newComment.createdAt,
+        complaintId: complaint.id,
+        url: `/admin/complaints?complaintId=${complaint.id}&openComments=true`
+      }, 'admin', complaint.hostelId);
+    }
+    
+    res.json({ comment: newComment, complaint });
+  } catch (error) {
+    console.error('Add comment error:', error);
+    res.status(500).json({ error: 'Failed to add comment' });
+  }
+});
+
+// Approve hostel request endpoint
+app.post('/api/hostelRequests/:id/approve', async (req, res) => {
+  try {
+    const data = await readData();
+    const index = data.hostelRequests.findIndex(item => item.id === req.params.id);
+    
+    if (index === -1) {
+      return res.status(404).json({ error: 'Hostel request not found' });
+    }
+    
+    const originalItem = data.hostelRequests[index];
+    const updatedItem = { 
+      ...originalItem, 
+      status: 'approved',
+      updatedAt: new Date().toISOString()
+    };
+    
+    // Create hostel entry
+    const newHostel = {
+      id: Date.now().toString(),
+      name: updatedItem.hostelName,
+      address: updatedItem.address,
+      phone: updatedItem.phone,
+      email: updatedItem.email,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    data.hostels.push(newHostel);
+    
+    // Create admin user for the hostel
+    const hostelDomain = updatedItem.hostelName.toLowerCase().replace(/[^a-z0-9]/g, '') + '.com';
+    const username = updatedItem.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const password = 'admin' + Math.random().toString(36).substring(2, 8);
+    
+    const adminUser = {
+      id: (Date.now() + 1).toString(),
+      name: updatedItem.name,
+      email: `${username}@${hostelDomain}`,
+      phone: updatedItem.phone,
+      role: 'admin',
+      password: password,
+      hostelId: newHostel.id,
+      hostelName: newHostel.name,
+      status: 'active',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    data.users.push(adminUser);
+    
+    // Add login credentials to the hostel request
+    updatedItem.userCredentials = {
+      email: adminUser.email,
+      password: password,
+      loginUrl: `https://pgflow.netlify.app/login?email=${encodeURIComponent(adminUser.email)}&password=${encodeURIComponent(password)}`
+    };
+    updatedItem.hostelId = newHostel.id;
+    
+    data.hostelRequests[index] = updatedItem;
+    await writeData(data);
+    
+    res.json(updatedItem);
+  } catch (error) {
+    console.error('Approve hostel request error:', error);
+    res.status(500).json({ error: 'Failed to approve hostel request' });
   }
 });
 
@@ -400,8 +600,10 @@ entities.forEach(entity => {
       // Wait for write to complete
       await writeData(data);
       
-      // Send real-time notifications
+      // Initialize comments array for complaints
       if (entity === 'complaints') {
+        newItem.comments = [];
+        
         sendNotification({
           type: 'complaint',
           title: 'New Complaint',
@@ -486,6 +688,21 @@ entities.forEach(entity => {
         }
       }
       
+      // Validate complaint status changes - prevent reverting to open except for tenants reopening resolved complaints
+      if (entity === 'complaints' && originalItem.status !== 'open' && updatedItem.status === 'open') {
+        // Allow tenants to reopen resolved complaints
+        if (!(originalItem.status === 'resolved' && updatedItem.reopenedBy)) {
+          return res.status(400).json({ 
+            error: 'Cannot revert complaint status back to open once it has been changed' 
+          });
+        }
+      }
+      
+      // Allow reopen status for resolved complaints
+      if (entity === 'complaints' && originalItem.status === 'resolved' && updatedItem.status === 'reopen') {
+        // This is valid - tenant reopening a resolved complaint
+      }
+      
       // Handle hostel request approval
       if (entity === 'hostelRequests' && originalItem.status !== 'approved' && updatedItem.status === 'approved') {
         // Create hostel entry
@@ -529,6 +746,25 @@ entities.forEach(entity => {
         updatedItem.hostelId = newHostel.id;
       }
       
+      // Add automatic comment when admin marks complaint as resolved (before saving)
+      if (entity === 'complaints' && originalItem.status !== updatedItem.status) {
+        if (updatedItem.status === 'resolved' && !updatedItem.reopenedBy) {
+          if (!updatedItem.comments) {
+            updatedItem.comments = [];
+          }
+          
+          const resolvedComment = {
+            id: Date.now().toString(),
+            comment: 'Complaint has been marked as resolved by admin.',
+            author: 'Admin',
+            role: 'admin',
+            createdAt: new Date().toISOString()
+          };
+          
+          updatedItem.comments.push(resolvedComment);
+        }
+      }
+      
       data[entity][index] = updatedItem;
       
       // Wait for write to complete
@@ -536,14 +772,35 @@ entities.forEach(entity => {
       
       // Send real-time notifications for complaint updates
       if (entity === 'complaints' && originalItem.status !== updatedItem.status) {
-        sendNotification({
-          type: 'complaint_update',
-          title: 'Complaint Status Updated',
-          message: `Your complaint "${updatedItem.title}" status has been updated to ${updatedItem.status.replace('-', ' ')}`,
-          priority: 'medium',
-          createdAt: updatedItem.updatedAt,
-          complaintId: updatedItem.id
-        }, 'tenant', updatedItem.hostelId);
+        
+        // Find the tenant who created this complaint
+        const tenant = data.tenants.find(t => t.name === updatedItem.tenantName && t.hostelId === updatedItem.hostelId);
+        if (tenant) {
+          // Find the tenant's user account
+          const tenantUser = data.users.find(u => u.name === tenant.name && u.role === 'tenant' && u.hostelId === updatedItem.hostelId);
+          if (tenantUser) {
+            // Send notification to specific tenant user
+            connectedUsers.forEach((userData, ws) => {
+              if (ws.readyState === WebSocket.OPEN && 
+                  userData.role === 'tenant' && 
+                  userData.hostelId === updatedItem.hostelId &&
+                  userData.name === tenantUser.name) {
+                ws.send(JSON.stringify({ 
+                  type: 'notification', 
+                  payload: {
+                    type: 'complaint_update',
+                    title: 'Complaint Status Updated',
+                    message: `Your complaint "${updatedItem.title}" status has been updated to ${updatedItem.status.replace('-', ' ')}`,
+                    priority: 'medium',
+                    createdAt: updatedItem.updatedAt,
+                    complaintId: updatedItem.id
+                  }
+                }));
+                console.log(`Complaint update notification sent to: ${userData.name}`);
+              }
+            });
+          }
+        }
       }
       
       console.log(`Updated ${entity}:`, req.params.id);
