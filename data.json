@@ -57,7 +57,7 @@
       "userCredentials": {
         "email": "venkateshpanuganti@sunrisewomenspg.com",
         "password": "tenantp64njv",
-        "loginUrl": "http://localhost:5000/auth/login?email=venkateshpanuganti%40sunrisewomenspg.com&password=tenantp64njv"
+        "loginUrl": "https://api-production-79b8.up.railway.app/auth/login?email=venkateshpanuganti%40sunrisewomenspg.com&password=tenantp64njv"
       }
     },
     {
@@ -83,7 +83,7 @@
       "userCredentials": {
         "email": "venkateshpanuganti@tlr.com",
         "password": "tenanto1w6qw",
-        "loginUrl": "http://localhost:5000/auth/login?email=venkateshpanuganti%40tlr.com&password=tenanto1w6qw"
+        "loginUrl": "https://api-production-79b8.up.railway.app/auth/login?email=venkateshpanuganti%40tlr.com&password=tenanto1w6qw"
       }
     }
   ],

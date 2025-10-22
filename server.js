@@ -319,6 +319,16 @@ entities.forEach(entity => {
           const hostelDomain = hostel.name.toLowerCase().replace(/[^a-z0-9]/g, '') + '.com';
           const username = newItem.name.toLowerCase().replace(/[^a-z0-9]/g, '');
           newItem.email = `${username}@${hostelDomain}`;
+          
+          // Generate login credentials for user
+          if (!newItem.password) {
+            newItem.password = newItem.role + Math.random().toString(36).substring(2, 8);
+          }
+          newItem.userCredentials = {
+            email: newItem.email,
+            password: newItem.password,
+            loginUrl: `https://pgflow.netlify.app/login?email=${encodeURIComponent(newItem.email)}&password=${encodeURIComponent(newItem.password)}`
+          };
         }
       }
       
@@ -349,7 +359,7 @@ entities.forEach(entity => {
           newItem.userCredentials = {
             email: tenantUser.email,
             password: password,
-            loginUrl: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/login?email=${encodeURIComponent(tenantUser.email)}&password=${encodeURIComponent(password)}`
+            loginUrl: `https://pgflow.netlify.app/login?email=${encodeURIComponent(tenantUser.email)}&password=${encodeURIComponent(password)}`
           };
         }
       }
@@ -406,8 +416,9 @@ entities.forEach(entity => {
           title: 'New Hostel Request',
           message: `${newItem.hostelName} - ${newItem.name}`,
           priority: 'medium',
-          createdAt: newItem.createdAt
-        }, 'master_admin');
+          createdAt: newItem.createdAt,
+          requestId: newItem.id
+        }, 'master_admin', null);
       }
       
       console.log(`Created ${entity}:`, newItem.id);
@@ -473,6 +484,49 @@ entities.forEach(entity => {
             });
           }
         }
+      }
+      
+      // Handle hostel request approval
+      if (entity === 'hostelRequests' && originalItem.status !== 'approved' && updatedItem.status === 'approved') {
+        // Create hostel entry
+        const newHostel = {
+          id: Date.now().toString(),
+          name: updatedItem.hostelName,
+          address: updatedItem.address,
+          phone: updatedItem.phone,
+          email: updatedItem.email,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+        data.hostels.push(newHostel);
+        
+        // Create admin user for the hostel
+        const hostelDomain = updatedItem.hostelName.toLowerCase().replace(/[^a-z0-9]/g, '') + '.com';
+        const username = updatedItem.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const password = 'admin' + Math.random().toString(36).substring(2, 8);
+        
+        const adminUser = {
+          id: (Date.now() + 1).toString(),
+          name: updatedItem.name,
+          email: `${username}@${hostelDomain}`,
+          phone: updatedItem.phone,
+          role: 'admin',
+          password: password,
+          hostelId: newHostel.id,
+          hostelName: newHostel.name,
+          status: 'active',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+        data.users.push(adminUser);
+        
+        // Add login credentials to the hostel request
+        updatedItem.userCredentials = {
+          email: adminUser.email,
+          password: password,
+          loginUrl: `https://pgflow.netlify.app/login?email=${encodeURIComponent(adminUser.email)}&password=${encodeURIComponent(password)}`
+        };
+        updatedItem.hostelId = newHostel.id;
       }
       
       data[entity][index] = updatedItem;
