@@ -4,6 +4,14 @@ const fs = require('fs').promises;
 const path = require('path');
 const WebSocket = require('ws');
 const http = require('http');
+const webpush = require('web-push');
+
+// Configure web-push
+webpush.setVapidDetails(
+  'mailto:admin@hostelpro.com',
+  'BEl62iUYgUivxIkv69yViEuiBIa40HI0DLLuxazjqAKHSr3txbueJl01T8HLz1x9zV2HJWqeqUBdHiiFhVVPUIw',
+  'adVtiVfLmDewxaFJkajskJJ-WOSAPNucvqKrbyWY_gaY'
+);
 
 const app = express();
 const server = http.createServer(app);
@@ -11,8 +19,9 @@ const wss = new WebSocket.Server({ server });
 const PORT = process.env.PORT || 5000;
 const DATA_FILE = path.join(__dirname, 'data.json');
 
-// Store connected users
+// Store connected users and push subscriptions
 const connectedUsers = new Map();
+const pushSubscriptions = new Map(); // userId -> subscription
 
 wss.on('connection', (ws) => {
   console.log('New WebSocket connection established');
@@ -37,24 +46,49 @@ wss.on('connection', (ws) => {
 });
 
 // Helper function to send notifications
-const sendNotification = (notification, targetRole, hostelId = null) => {
+const sendNotification = async (notification, targetRole, hostelId = null) => {
   console.log(`Sending notification to role: ${targetRole}, hostelId: ${hostelId}`);
   console.log('Notification:', notification);
-  console.log('Connected users:', Array.from(connectedUsers.values()));
   
   let sentCount = 0;
+  let pushCount = 0;
+  
+  // Send WebSocket notifications to connected users
   connectedUsers.forEach((userData, ws) => {
-    console.log(`Checking user: ${userData.name} (${userData.role}) - hostelId: ${userData.hostelId}`);
-    
     if (ws.readyState === WebSocket.OPEN && userData.role === targetRole && 
         (hostelId === null || userData.hostelId === hostelId || userData.hostelId === String(hostelId))) {
       ws.send(JSON.stringify({ type: 'notification', payload: notification }));
       sentCount++;
-      console.log(`Notification sent to: ${userData.name}`);
+      console.log(`WebSocket notification sent to: ${userData.name}`);
     }
   });
   
-  console.log(`Total notifications sent: ${sentCount}`);
+  // Send push notifications to subscribed users
+  for (const [userId, subData] of pushSubscriptions.entries()) {
+    if (subData.userRole === targetRole && 
+        (hostelId === null || subData.hostelId === hostelId || subData.hostelId === String(hostelId))) {
+      try {
+        await webpush.sendNotification(
+          subData.subscription,
+          JSON.stringify({
+            title: notification.title,
+            body: notification.message,
+            data: notification
+          })
+        );
+        pushCount++;
+        console.log(`Push notification sent to user: ${userId}`);
+      } catch (error) {
+        console.error(`Failed to send push to user ${userId}:`, error);
+        // Remove invalid subscription
+        if (error.statusCode === 410) {
+          pushSubscriptions.delete(userId);
+        }
+      }
+    }
+  }
+  
+  console.log(`Total WebSocket notifications: ${sentCount}, Push notifications: ${pushCount}`);
 };
 
 app.use(cors());
@@ -300,6 +334,27 @@ app.post('/api/auth/login', async (req, res) => {
   } catch (error) {
     console.error('Login error:', error);
     res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Push subscription endpoint
+app.post('/api/push-subscription', async (req, res) => {
+  try {
+    const { subscription, userId, userRole, hostelId } = req.body;
+    
+    // Store subscription
+    pushSubscriptions.set(userId, {
+      subscription,
+      userRole,
+      hostelId,
+      createdAt: new Date().toISOString()
+    });
+    
+    console.log(`Push subscription stored for user: ${userId}`);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Push subscription error:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 
