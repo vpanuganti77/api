@@ -9,8 +9,8 @@ const webpush = require('web-push');
 // Configure web-push
 webpush.setVapidDetails(
   'mailto:admin@hostelpro.com',
-  'BEl62iUYgUivxIkv69yViEuiBIa40HI0DLLuxazjqAKHSr3txbueJl01T8HLz1x9zV2HJWqeqUBdHiiFhVVPUIw',
-  'adVtiVfLmDewxaFJkajskJJ-WOSAPNucvqKrbyWY_gaY'
+  'BFgRKVi9ta3rYS9-EgATV6OsyqoTclh9e9LDfeZARRk4w7yj1GGeWqmWaMj2oLbPYpBN8eTBc9m2_Oo1pkmXZZA',
+  'GWzRHPXFADsT0MZkFqGYwK4BEUZwoXW7F4FwK3Px9Iw'
 );
 
 const app = express();
