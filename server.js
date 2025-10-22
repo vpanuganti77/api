@@ -91,7 +91,17 @@ const sendNotification = async (notification, targetRole, hostelId = null) => {
   console.log(`Total WebSocket notifications: ${sentCount}, Push notifications: ${pushCount}`);
 };
 
-app.use(cors());
+// Configure CORS
+app.use(cors({
+  origin: [
+    'https://pgflow.netlify.app',
+    'http://localhost:3000',
+    'http://localhost:3001'
+  ],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
 app.use(express.json());
 
 // Initialize data file
