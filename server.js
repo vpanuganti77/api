@@ -238,7 +238,7 @@ app.post('/api/auth/login', async (req, res) => {
     const user = data.users.find(u => u.email === email);
     
     if (!user) {
-      return res.status(401).json({ message: 'Invalid credentials' });
+      return res.status(404).json({ message: 'User account not found. Please check your email or contact administrator.' });
     }
     
     // For non-master admin users, validate hostel domain
@@ -264,9 +264,13 @@ app.post('/api/auth/login', async (req, res) => {
       });
     }
     
-    // Check if account is inactive
+    // Check if account is inactive or deleted
     if (user.status === 'inactive') {
       return res.status(401).json({ message: 'Account is deactivated. Please contact your administrator.' });
+    }
+    
+    if (user.status === 'deleted') {
+      return res.status(404).json({ message: 'User account has been deleted. Please contact administrator.' });
     }
     
     // Check password
@@ -365,6 +369,51 @@ app.post('/api/push-subscription', async (req, res) => {
   } catch (error) {
     console.error('Push subscription error:', error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+// Validate current password endpoint
+app.post('/api/auth/validate-password', async (req, res) => {
+  try {
+    const { userId, currentPassword } = req.body;
+    const data = await readData();
+    
+    const user = data.users.find(u => u.id === userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    
+    if (user.password !== currentPassword) {
+      return res.status(401).json({ message: 'Current password is incorrect' });
+    }
+    
+    res.json({ message: 'Password validated' });
+  } catch (error) {
+    console.error('Password validation error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Change password endpoint
+app.post('/api/auth/change-password', async (req, res) => {
+  try {
+    const { userId, newPassword } = req.body;
+    const data = await readData();
+    
+    const userIndex = data.users.findIndex(u => u.id === userId);
+    if (userIndex === -1) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    
+    data.users[userIndex].password = newPassword;
+    data.users[userIndex].firstLogin = false;
+    data.users[userIndex].updatedAt = new Date().toISOString();
+    
+    await writeData(data);
+    res.json({ message: 'Password updated successfully' });
+  } catch (error) {
+    console.error('Password change error:', error);
+    res.status(500).json({ message: 'Server error' });
   }
 });
 
@@ -500,6 +549,8 @@ app.post('/api/hostelRequests/:id/approve', async (req, res) => {
       address: updatedItem.address,
       phone: updatedItem.phone,
       email: updatedItem.email,
+      status: 'active',
+      planType: updatedItem.planType || 'free_trial',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
@@ -520,6 +571,7 @@ app.post('/api/hostelRequests/:id/approve', async (req, res) => {
       hostelId: newHostel.id,
       hostelName: newHostel.name,
       status: 'active',
+      firstLogin: true,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
@@ -615,6 +667,7 @@ entities.forEach(entity => {
             hostelId: newItem.hostelId,
             hostelName: hostel.name,
             status: 'active',
+            firstLogin: true,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString()
           };
@@ -753,19 +806,40 @@ entities.forEach(entity => {
         }
       }
       
-      // Validate complaint status changes - prevent reverting to open except for tenants reopening resolved complaints
-      if (entity === 'complaints' && originalItem.status !== 'open' && updatedItem.status === 'open') {
-        // Allow tenants to reopen resolved complaints
-        if (!(originalItem.status === 'resolved' && updatedItem.reopenedBy)) {
+      // Enhanced complaint status validation
+      if (entity === 'complaints') {
+        // Prevent deletion of complaints
+        if (req.method === 'DELETE') {
           return res.status(400).json({ 
-            error: 'Cannot revert complaint status back to open once it has been changed' 
+            error: 'Complaints cannot be deleted once raised' 
           });
         }
-      }
-      
-      // Allow reopen status for resolved complaints
-      if (entity === 'complaints' && originalItem.status === 'resolved' && updatedItem.status === 'reopen') {
-        // This is valid - tenant reopening a resolved complaint
+        
+        // Prevent reverting from in-progress to open
+        if (originalItem.status === 'in-progress' && updatedItem.status === 'open') {
+          return res.status(400).json({ 
+            error: 'Cannot revert complaint status from in-progress back to open' 
+          });
+        }
+        
+        // Prevent reverting from resolved to open (except through reopen)
+        if (originalItem.status === 'resolved' && updatedItem.status === 'open') {
+          return res.status(400).json({ 
+            error: 'Cannot revert complaint status from resolved back to open. Use reopen instead.' 
+          });
+        }
+        
+        // Prevent reverting from reopen to open
+        if (originalItem.status === 'reopen' && updatedItem.status === 'open') {
+          return res.status(400).json({ 
+            error: 'Cannot revert complaint status from reopen back to open' 
+          });
+        }
+        
+        // Allow reopen status for resolved complaints
+        if (originalItem.status === 'resolved' && updatedItem.status === 'reopen') {
+          // This is valid - tenant reopening a resolved complaint
+        }
       }
       
       // Handle hostel request approval
@@ -777,6 +851,8 @@ entities.forEach(entity => {
           address: updatedItem.address,
           phone: updatedItem.phone,
           email: updatedItem.email,
+          status: 'active',
+          planType: updatedItem.planType || 'free_trial',
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         };
@@ -797,6 +873,7 @@ entities.forEach(entity => {
           hostelId: newHostel.id,
           hostelName: newHostel.name,
           status: 'active',
+          firstLogin: true,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         };
@@ -884,6 +961,13 @@ entities.forEach(entity => {
       // Ensure entity array exists
       if (!Array.isArray(data[entity])) {
         data[entity] = [];
+      }
+      
+      // Prevent deletion of complaints (except for master admin cleanup)
+      if (entity === 'complaints' && req.query.masterAdminCleanup !== 'true') {
+        return res.status(400).json({ 
+          error: 'Complaints cannot be deleted once raised' 
+        });
       }
       
       const index = data[entity].findIndex(item => item.id === req.params.id);
