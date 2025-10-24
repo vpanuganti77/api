@@ -546,6 +546,74 @@ setInterval(checkPaymentReminders, 60 * 60 * 1000);
 // Run complaint reminder check every hour
 setInterval(checkComplaintReminders, 60 * 60 * 1000);
 
+// Push notification endpoint
+app.post('/api/push-notification', async (req, res) => {
+  try {
+    const { targetRole, targetEmail, title, message, type } = req.body;
+    
+    if (targetRole) {
+      // Send to all users with specific role
+      sendNotification({
+        type: type || 'general',
+        title,
+        message,
+        priority: 'high',
+        createdAt: new Date().toISOString()
+      }, targetRole, null);
+      
+      res.json({ message: `Notification sent to all ${targetRole} users` });
+    } else if (targetEmail) {
+      // Send to specific user by email
+      const data = await readData();
+      const user = data.users.find(u => u.email === targetEmail);
+      
+      if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+      
+      // Send to specific user
+      let sent = false;
+      connectedUsers.forEach((userData, ws) => {
+        if (ws.readyState === WebSocket.OPEN && userData.email === targetEmail) {
+          ws.send(JSON.stringify({ 
+            type: 'notification', 
+            payload: {
+              type: type || 'general',
+              title,
+              message,
+              priority: 'high',
+              createdAt: new Date().toISOString()
+            }
+          }));
+          sent = true;
+        }
+      });
+      
+      // Send push notification if user has subscription
+      for (const [userId, subData] of pushSubscriptions.entries()) {
+        if (subData.userRole === user.role && subData.hostelId === user.hostelId) {
+          try {
+            await webpush.sendNotification(
+              subData.subscription,
+              JSON.stringify({ title, body: message, data: { type } })
+            );
+            sent = true;
+          } catch (error) {
+            console.error(`Failed to send push to user ${userId}:`, error);
+          }
+        }
+      }
+      
+      res.json({ message: `Notification sent to ${targetEmail}`, delivered: sent });
+    } else {
+      res.status(400).json({ error: 'Either targetRole or targetEmail is required' });
+    }
+  } catch (error) {
+    console.error('Push notification error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Test notification endpoint
 app.post('/api/test-notification', async (req, res) => {
   try {
