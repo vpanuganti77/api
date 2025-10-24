@@ -119,7 +119,9 @@ const initializeData = async () => {
       expenses: [],
       staff: [],
       hostelRequests: [],
-      notices: []
+      notices: [],
+      checkoutRequests: [],
+      hostelSettings: []
     };
     await fs.writeFile(DATA_FILE, JSON.stringify(initialData, null, 2));
   }
@@ -149,7 +151,7 @@ const readData = async () => {
     const parsed = JSON.parse(rawData);
     
     // Ensure all required arrays exist
-    const requiredKeys = ['hostels', 'tenants', 'rooms', 'payments', 'complaints', 'users', 'expenses', 'staff', 'hostelRequests', 'notices'];
+    const requiredKeys = ['hostels', 'tenants', 'rooms', 'payments', 'complaints', 'users', 'expenses', 'staff', 'hostelRequests', 'notices', 'checkoutRequests', 'hostelSettings'];
     let needsUpdate = false;
     
     for (const key of requiredKeys) {
@@ -179,7 +181,9 @@ const readData = async () => {
       expenses: [],
       staff: [],
       hostelRequests: [],
-      notices: []
+      notices: [],
+      checkoutRequests: [],
+      hostelSettings: []
     };
     
     await fs.writeFile(DATA_FILE, JSON.stringify(defaultData, null, 2), 'utf8');
@@ -417,6 +421,131 @@ app.post('/api/auth/change-password', async (req, res) => {
   }
 });
 
+// Notification tracking
+const notificationLog = new Map(); // Track last notification times
+
+// Payment reminder system
+const checkPaymentReminders = async () => {
+  try {
+    const data = await readData();
+    const now = new Date();
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    
+    for (const tenant of data.tenants) {
+      if (tenant.status !== 'active' || !tenant.nextDueDate) continue;
+      
+      const dueDate = new Date(tenant.nextDueDate);
+      const tomorrowStr = tomorrow.toISOString().split('T')[0];
+      const dueDateStr = dueDate.toISOString().split('T')[0];
+      
+      // Check if payment was made this month
+      const lastPayment = data.payments
+        .filter(p => p.tenantId === tenant.id && p.type === 'rent')
+        .sort((a, b) => new Date(b.paymentDate).getTime() - new Date(a.paymentDate).getTime())[0];
+      
+      const hasPaymentThisMonth = lastPayment && 
+        new Date(lastPayment.paymentDate).getMonth() === now.getMonth() &&
+        new Date(lastPayment.paymentDate).getFullYear() === now.getFullYear();
+      
+      if (!hasPaymentThisMonth) {
+        const notificationKey = `payment_${tenant.id}_${dueDateStr}`;
+        const lastNotification = notificationLog.get(notificationKey);
+        
+        // Send reminder 1 day before due date (once per day)
+        if (dueDateStr === tomorrowStr) {
+          if (!lastNotification || (now.getTime() - lastNotification) >= 24 * 60 * 60 * 1000) {
+            sendNotification({
+              type: 'payment',
+              title: 'Payment Reminder',
+              message: `Your rent payment of ₹${tenant.rent} is due tomorrow (${dueDate.toLocaleDateString()}). Please make the payment to avoid late fees.`,
+              priority: 'high',
+              createdAt: now.toISOString(),
+              tenantId: tenant.id
+            }, 'tenant', tenant.hostelId);
+            notificationLog.set(notificationKey, now.getTime());
+          }
+        }
+        
+        // Send overdue notification after due date (every 12 hours)
+        if (dueDate < now) {
+          const overdueKey = `overdue_${tenant.id}_${dueDateStr}`;
+          const lastOverdueNotification = notificationLog.get(overdueKey);
+          
+          if (!lastOverdueNotification || (now.getTime() - lastOverdueNotification) >= 12 * 60 * 60 * 1000) {
+            const daysOverdue = Math.floor((now.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24));
+            sendNotification({
+              type: 'payment',
+              title: 'Payment Overdue',
+              message: `Your rent payment of ₹${tenant.rent} is ${daysOverdue} day(s) overdue. Please make the payment immediately to avoid penalties.`,
+              priority: 'high',
+              createdAt: now.toISOString(),
+              tenantId: tenant.id
+            }, 'tenant', tenant.hostelId);
+            notificationLog.set(overdueKey, now.getTime());
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Payment reminder check error:', error);
+  }
+};
+
+// Complaint reminder system
+const checkComplaintReminders = async () => {
+  try {
+    const data = await readData();
+    const now = new Date();
+    
+    for (const complaint of data.complaints) {
+      const complaintKey = `complaint_${complaint.id}`;
+      
+      // Only send reminders for open or reopened complaints
+      if (complaint.status === 'open' || complaint.status === 'reopen') {
+        const lastNotification = notificationLog.get(complaintKey);
+        
+        // Send reminder every 4 hours for open/reopened complaints
+        if (!lastNotification || (now.getTime() - lastNotification) >= 4 * 60 * 60 * 1000) {
+          const createdDate = new Date(complaint.createdAt);
+          const hoursOpen = Math.floor((now.getTime() - createdDate.getTime()) / (1000 * 60 * 60));
+          
+          sendNotification({
+            type: 'complaint',
+            title: 'Pending Complaint Reminder',
+            message: `Complaint "${complaint.title}" by ${complaint.tenantName} has been ${complaint.status} for ${hoursOpen} hours. Please review and take action.`,
+            priority: 'medium',
+            createdAt: now.toISOString(),
+            complaintId: complaint.id
+          }, 'admin', complaint.hostelId);
+          
+          sendNotification({
+            type: 'complaint',
+            title: 'Pending Complaint Reminder',
+            message: `Complaint "${complaint.title}" by ${complaint.tenantName} has been ${complaint.status} for ${hoursOpen} hours. Please review and take action.`,
+            priority: 'medium',
+            createdAt: now.toISOString(),
+            complaintId: complaint.id
+          }, 'receptionist', complaint.hostelId);
+          
+          notificationLog.set(complaintKey, now.getTime());
+        }
+      } else if (complaint.status === 'in-progress' || complaint.status === 'resolved') {
+        // Clear notification tracking when complaint is in-progress or resolved
+        notificationLog.delete(complaintKey);
+      }
+    }
+  } catch (error) {
+    console.error('Complaint reminder check error:', error);
+  }
+};
+
+// Run payment reminder check every hour
+setInterval(checkPaymentReminders, 60 * 60 * 1000);
+
+// Run complaint reminder check every hour
+setInterval(checkComplaintReminders, 60 * 60 * 1000);
+
 // Test notification endpoint
 app.post('/api/test-notification', async (req, res) => {
   try {
@@ -596,7 +725,7 @@ app.post('/api/hostelRequests/:id/approve', async (req, res) => {
 });
 
 // Generic routes for all entities
-const entities = ['hostels', 'tenants', 'rooms', 'payments', 'complaints', 'users', 'expenses', 'staff', 'hostelRequests', 'notices'];
+const entities = ['hostels', 'tenants', 'rooms', 'payments', 'complaints', 'users', 'expenses', 'staff', 'hostelRequests', 'notices', 'checkoutRequests', 'hostelSettings'];
 
 entities.forEach(entity => {
   // GET all
@@ -680,6 +809,34 @@ entities.forEach(entity => {
             loginUrl: `https://pgflow.netlify.app/login?email=${encodeURIComponent(tenantUser.email)}&password=${encodeURIComponent(password)}`
           };
         }
+        
+        // Calculate next due date based on joining date (monthly cycle)
+        if (newItem.joiningDate) {
+          const joiningDate = new Date(newItem.joiningDate);
+          const today = new Date();
+          const currentMonth = today.getMonth();
+          const currentYear = today.getFullYear();
+          
+          // Calculate next due date on the same day of month as joining date
+          let nextDueDate = new Date(currentYear, currentMonth, joiningDate.getDate());
+          
+          // If this month's due date has passed, move to next month
+          if (nextDueDate <= today) {
+            nextDueDate = new Date(currentYear, currentMonth + 1, joiningDate.getDate());
+          }
+          
+          newItem.nextDueDate = nextDueDate.toISOString().split('T')[0];
+        }
+        
+        // Send notification to admin when new tenant is added
+        sendNotification({
+          type: 'tenant',
+          title: 'New Tenant Joined',
+          message: `${newItem.name} has joined the hostel in room ${newItem.room}. Welcome the new tenant!`,
+          priority: 'medium',
+          createdAt: new Date().toISOString(),
+          tenantId: newItem.id
+        }, 'admin', newItem.hostelId);
       }
       
       // Check unique constraints within hostel scope
@@ -739,6 +896,40 @@ entities.forEach(entity => {
           createdAt: newItem.createdAt,
           requestId: newItem.id
         }, 'master_admin', null);
+      } else if (entity === 'checkoutRequests') {
+        // Send checkout request notification to admin and receptionist
+        sendNotification({
+          type: 'checkout',
+          title: 'Checkout Request',
+          message: `${newItem.tenantName} has requested to checkout from room ${newItem.roomNumber}. Please review the request.`,
+          priority: 'high',
+          createdAt: newItem.createdAt,
+          checkoutId: newItem.id
+        }, 'admin', newItem.hostelId);
+        
+        sendNotification({
+          type: 'checkout',
+          title: 'Checkout Request',
+          message: `${newItem.tenantName} has requested to checkout from room ${newItem.roomNumber}. Please review the request.`,
+          priority: 'high',
+          createdAt: newItem.createdAt,
+          checkoutId: newItem.id
+        }, 'receptionist', newItem.hostelId);
+      } else if (entity === 'payments' && newItem.type === 'rent') {
+        // Update tenant's next due date when rent is paid (based on joining date)
+        const tenantIndex = data.tenants.findIndex(t => t.id === newItem.tenantId);
+        if (tenantIndex !== -1) {
+          const tenant = data.tenants[tenantIndex];
+          const joiningDate = new Date(tenant.joiningDate);
+          const paymentDate = new Date(newItem.paymentDate);
+          
+          // Calculate next due date on same day of next month as joining date
+          let nextDueDate = new Date(paymentDate.getFullYear(), paymentDate.getMonth() + 1, joiningDate.getDate());
+          
+          tenant.nextDueDate = nextDueDate.toISOString().split('T')[0];
+          tenant.lastPaymentDate = newItem.paymentDate;
+          await writeData(data);
+        }
       }
       
       console.log(`Created ${entity}:`, newItem.id);

@@ -29,8 +29,11 @@
       "status": "active",
       "firstLogin": true,
       "createdAt": "2025-10-23T17:16:08.026Z",
-      "updatedAt": "2025-10-23T17:16:08.026Z",
-      "failedLoginAttempts": 0
+      "updatedAt": "2025-10-23T17:53:26.606Z",
+      "failedLoginAttempts": 3,
+      "isLocked": true,
+      "lockedAt": "2025-10-23T17:57:15.692Z",
+      "lockedBy": null
     }
   ],
   "expenses": [],
