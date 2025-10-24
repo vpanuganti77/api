@@ -245,8 +245,8 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(404).json({ message: 'User account not found. Please check your email or contact administrator.' });
     }
     
-    // For non-master admin users, validate hostel domain
-    if (user.role !== 'master_admin') {
+    // For non-master admin users, validate hostel domain (skip for pending approval)
+    if (user.role !== 'master_admin' && user.status !== 'pending_approval') {
       const hostel = data.hostels.find(h => h.id === user.hostelId);
       if (!hostel) {
         return res.status(401).json({ message: 'Hostel not found. Please contact administrator.' });
