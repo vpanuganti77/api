@@ -1101,51 +1101,7 @@ entities.forEach(entity => {
         }
       }
       
-      // Handle hostel request approval
-      if (entity === 'hostelRequests' && originalItem.status !== 'approved' && updatedItem.status === 'approved') {
-        // Create hostel entry
-        const newHostel = {
-          id: Date.now().toString(),
-          name: updatedItem.hostelName,
-          address: updatedItem.address,
-          phone: updatedItem.phone,
-          email: updatedItem.email,
-          status: 'active',
-          planType: updatedItem.planType || 'free_trial',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        };
-        data.hostels.push(newHostel);
-        
-        // Create admin user for the hostel
-        const hostelDomain = updatedItem.hostelName.toLowerCase().replace(/[^a-z0-9]/g, '') + '.com';
-        const username = updatedItem.name.toLowerCase().replace(/[^a-z0-9]/g, '');
-        const password = 'admin' + Math.random().toString(36).substring(2, 8);
-        
-        const adminUser = {
-          id: (Date.now() + 1).toString(),
-          name: updatedItem.name,
-          email: `${username}@${hostelDomain}`,
-          phone: updatedItem.phone,
-          role: 'admin',
-          password: password,
-          hostelId: newHostel.id,
-          hostelName: newHostel.name,
-          status: 'active',
-          firstLogin: true,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        };
-        data.users.push(adminUser);
-        
-        // Add login credentials to the hostel request
-        updatedItem.userCredentials = {
-          email: adminUser.email,
-          password: password,
-          loginUrl: `https://pgflow.netlify.app/login?email=${encodeURIComponent(adminUser.email)}&password=${encodeURIComponent(password)}`
-        };
-        updatedItem.hostelId = newHostel.id;
-      }
+      // Hostel request approval is now handled by frontend - no backend hostel creation
       
       // Add automatic comment when admin marks complaint as resolved (before saving)
       if (entity === 'complaints' && originalItem.status !== updatedItem.status) {
