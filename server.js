@@ -5,6 +5,30 @@ const path = require('path');
 const WebSocket = require('ws');
 const http = require('http');
 const webpush = require('web-push');
+const multer = require('multer');
+
+// Configure multer for file uploads
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, 'uploads/complaints/');
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const upload = multer({ 
+  storage: storage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only image files are allowed'));
+    }
+  }
+});
 
 // Configure web-push
 webpush.setVapidDetails(
@@ -65,9 +89,21 @@ const sendNotification = async (notification, targetRole, hostelId = null) => {
   
   // Send push notifications to subscribed users
   for (const [userId, subData] of pushSubscriptions.entries()) {
-    if (subData.userRole === targetRole && 
-        (hostelId === null || subData.hostelId === hostelId || subData.hostelId === String(hostelId))) {
+    const roleMatches = subData.userRole === targetRole;
+    
+    // Handle hostel matching logic
+    let hostelMatches = false;
+    if (hostelId === null) {
+      // Global notifications (like master_admin notifications) - send to all users of that role
+      hostelMatches = true;
+    } else {
+      // Hostel-specific notifications - match exact hostel
+      hostelMatches = subData.hostelId === hostelId || subData.hostelId === String(hostelId);
+    }
+    
+    if (roleMatches && hostelMatches) {
       try {
+        console.log(`Sending push notification to user ${userId} with role ${subData.userRole}, hostelId: ${subData.hostelId}`);
         await webpush.sendNotification(
           subData.subscription,
           JSON.stringify({
@@ -85,6 +121,8 @@ const sendNotification = async (notification, targetRole, hostelId = null) => {
           pushSubscriptions.delete(userId);
         }
       }
+    } else {
+      console.log(`Skipping user ${userId}: role match=${roleMatches}, hostel match=${hostelMatches} (target: ${targetRole}, hostel: ${hostelId})`);
     }
   }
   
@@ -314,8 +352,15 @@ app.post('/api/auth/login', async (req, res) => {
       if (hostel) {
         hostelInfo = {
           hostelId: hostel.id,
-          hostelName: hostel.name,
+          hostelName: hostel.displayName || hostel.name,
           hostelAddress: hostel.address
+        };
+      } else if (user.status === 'pending_approval' && user.hostelName) {
+        // For pending approval users, use hostelName from user record
+        hostelInfo = {
+          hostelId: user.hostelId,
+          hostelName: user.hostelName,
+          hostelAddress: null
         };
       }
     }
@@ -792,8 +837,200 @@ app.post('/api/hostelRequests/:id/approve', async (req, res) => {
   }
 });
 
-// Generic routes for all entities
-const entities = ['hostels', 'tenants', 'rooms', 'payments', 'complaints', 'users', 'expenses', 'staff', 'hostelRequests', 'notices', 'checkoutRequests', 'hostelSettings'];
+// Serve uploaded files
+app.get('/api/uploads/complaints/:filename', (req, res) => {
+  const filename = req.params.filename;
+  const filePath = path.join(__dirname, 'uploads', 'complaints', filename);
+  res.sendFile(filePath);
+});
+
+// Special route for complaints with file uploads
+app.post('/api/complaints', upload.array('attachments', 5), async (req, res) => {
+  try {
+    console.log('Creating complaint with data:', req.body);
+    console.log('Files:', req.files);
+    
+    const data = await readData();
+    
+    if (!Array.isArray(data.complaints)) {
+      data.complaints = [];
+    }
+    
+    // Process uploaded files
+    const attachments = req.files ? req.files.map(file => ({
+      filename: file.filename,
+      originalName: file.originalname,
+      path: `/api/uploads/complaints/${file.filename}`,
+      size: file.size,
+      mimetype: file.mimetype
+    })) : [];
+    
+    const newItem = { 
+      ...req.body, 
+      id: Date.now().toString(),
+      attachments: attachments,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    
+    console.log('New complaint item:', newItem);
+    
+    data.complaints.push(newItem);
+    await writeData(data);
+    
+    // Initialize comments array
+    newItem.comments = [];
+    
+    sendNotification({
+      type: 'complaint',
+      title: 'New Complaint',
+      message: `${newItem.title} - ${newItem.tenantName}`,
+      priority: newItem.priority || 'medium',
+      createdAt: newItem.createdAt,
+      complaintId: newItem.id
+    }, 'admin', newItem.hostelId);
+    
+    console.log('Created complaint:', newItem.id);
+    res.json(newItem);
+  } catch (error) {
+    console.error('Error creating complaint:', error);
+    res.status(500).json({ error: `Failed to create complaint: ${error.message}` });
+  }
+});
+
+// Generic routes for all entities (excluding complaints which has special handling above)
+const entities = ['hostels', 'tenants', 'rooms', 'payments', 'users', 'expenses', 'staff', 'hostelRequests', 'notices', 'checkoutRequests', 'hostelSettings'];
+
+// Add complaints GET, PUT, DELETE routes separately
+app.get('/api/complaints', async (req, res) => {
+  try {
+    const data = await readData();
+    res.json(data.complaints || []);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/complaints/:id', async (req, res) => {
+  try {
+    const data = await readData();
+    
+    if (!Array.isArray(data.complaints)) {
+      data.complaints = [];
+    }
+    
+    const index = data.complaints.findIndex(item => item.id === req.params.id);
+    if (index === -1) {
+      return res.status(404).json({ error: 'Complaint not found' });
+    }
+    
+    const originalItem = data.complaints[index];
+    const updatedItem = { 
+      ...originalItem, 
+      ...req.body, 
+      id: req.params.id,
+      updatedAt: new Date().toISOString()
+    };
+    
+    // Enhanced complaint status validation
+    if (originalItem.status === 'in-progress' && updatedItem.status === 'open') {
+      return res.status(400).json({ 
+        error: 'Cannot revert complaint status from in-progress back to open' 
+      });
+    }
+    
+    if (originalItem.status === 'resolved' && updatedItem.status === 'open') {
+      return res.status(400).json({ 
+        error: 'Cannot revert complaint status from resolved back to open. Use reopen instead.' 
+      });
+    }
+    
+    if (originalItem.status === 'reopen' && updatedItem.status === 'open') {
+      return res.status(400).json({ 
+        error: 'Cannot revert complaint status from reopen back to open' 
+      });
+    }
+    
+    // Add automatic comment when admin marks complaint as resolved
+    if (originalItem.status !== updatedItem.status && updatedItem.status === 'resolved' && !updatedItem.reopenedBy) {
+      if (!updatedItem.comments) {
+        updatedItem.comments = [];
+      }
+      
+      const resolvedComment = {
+        id: Date.now().toString(),
+        comment: 'Complaint has been marked as resolved by admin.',
+        author: 'Admin',
+        role: 'admin',
+        createdAt: new Date().toISOString()
+      };
+      
+      updatedItem.comments.push(resolvedComment);
+    }
+    
+    data.complaints[index] = updatedItem;
+    await writeData(data);
+    
+    // Send notification for status updates
+    if (originalItem.status !== updatedItem.status) {
+      const tenant = data.tenants.find(t => t.name === updatedItem.tenantName && t.hostelId === updatedItem.hostelId);
+      if (tenant) {
+        const tenantUser = data.users.find(u => u.name === tenant.name && u.role === 'tenant' && u.hostelId === updatedItem.hostelId);
+        if (tenantUser) {
+          connectedUsers.forEach((userData, ws) => {
+            if (ws.readyState === WebSocket.OPEN && 
+                userData.role === 'tenant' && 
+                userData.hostelId === updatedItem.hostelId &&
+                userData.name === tenantUser.name) {
+              ws.send(JSON.stringify({ 
+                type: 'notification', 
+                payload: {
+                  type: 'complaint_update',
+                  title: 'Complaint Status Updated',
+                  message: `Your complaint "${updatedItem.title}" status has been updated to ${updatedItem.status.replace('-', ' ')}`,
+                  priority: 'medium',
+                  createdAt: updatedItem.updatedAt,
+                  complaintId: updatedItem.id
+                }
+              }));
+            }
+          });
+        }
+      }
+    }
+    
+    res.json(updatedItem);
+  } catch (error) {
+    console.error('Error updating complaint:', error);
+    res.status(500).json({ error: `Failed to update complaint: ${error.message}` });
+  }
+});
+
+app.delete('/api/complaints/:id', async (req, res) => {
+  try {
+    const data = await readData();
+    
+    if (!Array.isArray(data.complaints)) {
+      data.complaints = [];
+    }
+    
+    if (req.query.masterAdminCleanup !== 'true') {
+      return res.status(400).json({ 
+        error: 'Complaints cannot be deleted once raised' 
+      });
+    }
+    
+    const index = data.complaints.findIndex(item => item.id === req.params.id);
+    if (index === -1) return res.status(404).json({ error: 'Item not found' });
+    
+    data.complaints.splice(index, 1);
+    await writeData(data);
+    res.json({ message: 'Item deleted' });
+  } catch (error) {
+    console.error('Error deleting complaint:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 entities.forEach(entity => {
   // GET all
@@ -943,19 +1180,7 @@ entities.forEach(entity => {
       // Wait for write to complete
       await writeData(data);
       
-      // Initialize comments array for complaints
-      if (entity === 'complaints') {
-        newItem.comments = [];
-        
-        sendNotification({
-          type: 'complaint',
-          title: 'New Complaint',
-          message: `${newItem.title} - ${newItem.tenantName}`,
-          priority: newItem.priority || 'medium',
-          createdAt: newItem.createdAt,
-          complaintId: newItem.id
-        }, 'admin', newItem.hostelId);
-      } else if (entity === 'hostelRequests') {
+      if (entity === 'hostelRequests') {
         sendNotification({
           type: 'hostelRequest',
           title: 'New Hostel Request',
@@ -1065,100 +1290,14 @@ entities.forEach(entity => {
         }
       }
       
-      // Enhanced complaint status validation
-      if (entity === 'complaints') {
-        // Prevent deletion of complaints
-        if (req.method === 'DELETE') {
-          return res.status(400).json({ 
-            error: 'Complaints cannot be deleted once raised' 
-          });
-        }
-        
-        // Prevent reverting from in-progress to open
-        if (originalItem.status === 'in-progress' && updatedItem.status === 'open') {
-          return res.status(400).json({ 
-            error: 'Cannot revert complaint status from in-progress back to open' 
-          });
-        }
-        
-        // Prevent reverting from resolved to open (except through reopen)
-        if (originalItem.status === 'resolved' && updatedItem.status === 'open') {
-          return res.status(400).json({ 
-            error: 'Cannot revert complaint status from resolved back to open. Use reopen instead.' 
-          });
-        }
-        
-        // Prevent reverting from reopen to open
-        if (originalItem.status === 'reopen' && updatedItem.status === 'open') {
-          return res.status(400).json({ 
-            error: 'Cannot revert complaint status from reopen back to open' 
-          });
-        }
-        
-        // Allow reopen status for resolved complaints
-        if (originalItem.status === 'resolved' && updatedItem.status === 'reopen') {
-          // This is valid - tenant reopening a resolved complaint
-        }
-      }
-      
       // Hostel request approval is now handled by frontend - no backend hostel creation
-      
-      // Add automatic comment when admin marks complaint as resolved (before saving)
-      if (entity === 'complaints' && originalItem.status !== updatedItem.status) {
-        if (updatedItem.status === 'resolved' && !updatedItem.reopenedBy) {
-          if (!updatedItem.comments) {
-            updatedItem.comments = [];
-          }
-          
-          const resolvedComment = {
-            id: Date.now().toString(),
-            comment: 'Complaint has been marked as resolved by admin.',
-            author: 'Admin',
-            role: 'admin',
-            createdAt: new Date().toISOString()
-          };
-          
-          updatedItem.comments.push(resolvedComment);
-        }
-      }
       
       data[entity][index] = updatedItem;
       
       // Wait for write to complete
       await writeData(data);
       
-      // Send real-time notifications for complaint updates
-      if (entity === 'complaints' && originalItem.status !== updatedItem.status) {
-        
-        // Find the tenant who created this complaint
-        const tenant = data.tenants.find(t => t.name === updatedItem.tenantName && t.hostelId === updatedItem.hostelId);
-        if (tenant) {
-          // Find the tenant's user account
-          const tenantUser = data.users.find(u => u.name === tenant.name && u.role === 'tenant' && u.hostelId === updatedItem.hostelId);
-          if (tenantUser) {
-            // Send notification to specific tenant user
-            connectedUsers.forEach((userData, ws) => {
-              if (ws.readyState === WebSocket.OPEN && 
-                  userData.role === 'tenant' && 
-                  userData.hostelId === updatedItem.hostelId &&
-                  userData.name === tenantUser.name) {
-                ws.send(JSON.stringify({ 
-                  type: 'notification', 
-                  payload: {
-                    type: 'complaint_update',
-                    title: 'Complaint Status Updated',
-                    message: `Your complaint "${updatedItem.title}" status has been updated to ${updatedItem.status.replace('-', ' ')}`,
-                    priority: 'medium',
-                    createdAt: updatedItem.updatedAt,
-                    complaintId: updatedItem.id
-                  }
-                }));
-                console.log(`Complaint update notification sent to: ${userData.name}`);
-              }
-            });
-          }
-        }
-      }
+
       
       console.log(`Updated ${entity}:`, req.params.id);
       res.json(updatedItem);
@@ -1178,12 +1317,7 @@ entities.forEach(entity => {
         data[entity] = [];
       }
       
-      // Prevent deletion of complaints (except for master admin cleanup)
-      if (entity === 'complaints' && req.query.masterAdminCleanup !== 'true') {
-        return res.status(400).json({ 
-          error: 'Complaints cannot be deleted once raised' 
-        });
-      }
+
       
       const index = data[entity].findIndex(item => item.id === req.params.id);
       if (index === -1) return res.status(404).json({ error: 'Item not found' });

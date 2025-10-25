@@ -1,6 +1,31 @@
 const express = require('express');
 const cors = require('cors');
 const db = require('./database');
+const multer = require('multer');
+const path = require('path');
+
+// Configure multer for file uploads
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, 'uploads/complaints/');
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const upload = multer({ 
+  storage: storage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only image files are allowed'));
+    }
+  }
+});
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -8,8 +33,48 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 
-// Generic routes for all entities
-const entities = ['hostels', 'tenants', 'rooms', 'payments', 'complaints', 'users', 'expenses', 'staff', 'hostelRequests', 'notices'];
+// Serve uploaded files
+app.get('/api/uploads/complaints/:filename', (req, res) => {
+  const filename = req.params.filename;
+  const filePath = path.join(__dirname, 'uploads', 'complaints', filename);
+  res.sendFile(filePath);
+});
+
+// Special route for complaints with file uploads
+app.post('/api/complaints', upload.array('attachments', 5), async (req, res) => {
+  try {
+    console.log('Creating complaint with data:', req.body);
+    console.log('Files:', req.files);
+    
+    // Process uploaded files
+    const attachments = req.files ? req.files.map(file => ({
+      filename: file.filename,
+      originalName: file.originalname,
+      path: `/api/uploads/complaints/${file.filename}`,
+      size: file.size,
+      mimetype: file.mimetype
+    })) : [];
+    
+    const complaintData = {
+      ...req.body,
+      attachments: JSON.stringify(attachments) // Store as JSON string in SQLite
+    };
+    
+    const newItem = await db.create('complaints', complaintData);
+    console.log('Created complaint:', newItem.id);
+    res.json(newItem);
+  } catch (error) {
+    console.error('Error creating complaint:', error);
+    if (error.message.includes('already exists') || error.message.includes('UNIQUE constraint')) {
+      res.status(409).json({ error: error.message });
+    } else {
+      res.status(500).json({ error: error.message });
+    }
+  }
+});
+
+// Generic routes for all entities (excluding complaints which has special handling above)
+const entities = ['hostels', 'tenants', 'rooms', 'payments', 'users', 'expenses', 'staff', 'hostelRequests', 'notices'];
 
 entities.forEach(entity => {
   // GET all
@@ -81,6 +146,57 @@ entities.forEach(entity => {
       res.status(500).json({ error: error.message });
     }
   });
+});
+
+// Add complaints GET, PUT, DELETE routes separately
+app.get('/api/complaints', async (req, res) => {
+  try {
+    const data = await db.getAll('complaints');
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching complaints:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/complaints/:id', async (req, res) => {
+  try {
+    const updatedItem = await db.update('complaints', req.params.id, req.body);
+    console.log('Updated complaint:', req.params.id);
+    res.json(updatedItem);
+  } catch (error) {
+    console.error('Error updating complaint:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete('/api/complaints/:id', async (req, res) => {
+  try {
+    const result = await db.delete('complaints', req.params.id);
+    if (result.deleted) {
+      console.log('Deleted complaint:', req.params.id);
+      res.json({ message: 'Item deleted' });
+    } else {
+      res.status(404).json({ error: 'Item not found' });
+    }
+  } catch (error) {
+    console.error('Error deleting complaint:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/complaints/:id', async (req, res) => {
+  try {
+    const item = await db.findById('complaints', req.params.id);
+    if (item) {
+      res.json(item);
+    } else {
+      res.status(404).json({ error: 'Item not found' });
+    }
+  } catch (error) {
+    console.error('Error fetching complaint:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // Auto-create demo data on startup
