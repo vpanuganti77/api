@@ -74,7 +74,7 @@ app.post('/api/complaints', upload.array('attachments', 5), async (req, res) => 
 });
 
 // Generic routes for all entities (excluding complaints which has special handling above)
-const entities = ['hostels', 'tenants', 'rooms', 'payments', 'users', 'expenses', 'staff', 'hostelRequests', 'notices'];
+const entities = ['hostels', 'tenants', 'rooms', 'payments', 'users', 'expenses', 'staff', 'hostelRequests', 'notices', 'supportTickets'];
 
 entities.forEach(entity => {
   // GET all

@@ -176,6 +176,23 @@ class Database {
         createdAt TEXT,
         updatedAt TEXT
       )`);
+
+      this.db.run(`CREATE TABLE IF NOT EXISTS supportTickets (
+        id TEXT PRIMARY KEY,
+        subject TEXT NOT NULL,
+        message TEXT NOT NULL,
+        category TEXT,
+        priority TEXT DEFAULT 'medium',
+        status TEXT DEFAULT 'open',
+        submittedBy TEXT,
+        submitterEmail TEXT,
+        submitterRole TEXT,
+        hostelId TEXT,
+        hostelName TEXT,
+        adminNotes TEXT,
+        createdAt TEXT,
+        updatedAt TEXT
+      )`);
       
       // Run schema updates after table creation
       this.updateSchema();

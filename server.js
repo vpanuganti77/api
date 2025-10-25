@@ -159,7 +159,8 @@ const initializeData = async () => {
       hostelRequests: [],
       notices: [],
       checkoutRequests: [],
-      hostelSettings: []
+      hostelSettings: [],
+      supportTickets: []
     };
     await fs.writeFile(DATA_FILE, JSON.stringify(initialData, null, 2));
   }
@@ -189,7 +190,7 @@ const readData = async () => {
     const parsed = JSON.parse(rawData);
     
     // Ensure all required arrays exist
-    const requiredKeys = ['hostels', 'tenants', 'rooms', 'payments', 'complaints', 'users', 'expenses', 'staff', 'hostelRequests', 'notices', 'checkoutRequests', 'hostelSettings'];
+    const requiredKeys = ['hostels', 'tenants', 'rooms', 'payments', 'complaints', 'users', 'expenses', 'staff', 'hostelRequests', 'notices', 'checkoutRequests', 'hostelSettings', 'supportTickets'];
     let needsUpdate = false;
     
     for (const key of requiredKeys) {
@@ -899,7 +900,7 @@ app.post('/api/complaints', upload.array('attachments', 5), async (req, res) => 
 });
 
 // Generic routes for all entities (excluding complaints which has special handling above)
-const entities = ['hostels', 'tenants', 'rooms', 'payments', 'users', 'expenses', 'staff', 'hostelRequests', 'notices', 'checkoutRequests', 'hostelSettings'];
+const entities = ['hostels', 'tenants', 'rooms', 'payments', 'users', 'expenses', 'staff', 'hostelRequests', 'notices', 'checkoutRequests', 'hostelSettings', 'supportTickets'];
 
 // Add complaints GET, PUT, DELETE routes separately
 app.get('/api/complaints', async (req, res) => {
@@ -1188,6 +1189,15 @@ entities.forEach(entity => {
           priority: 'medium',
           createdAt: newItem.createdAt,
           requestId: newItem.id
+        }, 'master_admin', null);
+      } else if (entity === 'supportTickets') {
+        sendNotification({
+          type: 'support',
+          title: 'New Support Ticket',
+          message: `${newItem.subject} - ${newItem.submittedBy}`,
+          priority: newItem.priority || 'medium',
+          createdAt: newItem.createdAt,
+          ticketId: newItem.id
         }, 'master_admin', null);
       } else if (entity === 'checkoutRequests') {
         // Send checkout request notification to admin and receptionist
