@@ -79,11 +79,20 @@ const sendNotification = async (notification, targetRole, hostelId = null) => {
   
   // Send WebSocket notifications to connected users
   connectedUsers.forEach((userData, ws) => {
-    if (ws.readyState === WebSocket.OPEN && userData.role === targetRole && 
-        (hostelId === null || userData.hostelId === hostelId || userData.hostelId === String(hostelId))) {
+    console.log(`Checking user: ${userData.name}, role: ${userData.role}, hostelId: ${userData.hostelId}`);
+    console.log(`Target role: ${targetRole}, target hostelId: ${hostelId}`);
+    
+    const roleMatches = userData.role === targetRole;
+    const hostelMatches = hostelId === null || userData.hostelId === hostelId || userData.hostelId === String(hostelId);
+    
+    console.log(`Role matches: ${roleMatches}, Hostel matches: ${hostelMatches}`);
+    
+    if (ws.readyState === WebSocket.OPEN && roleMatches && hostelMatches) {
       ws.send(JSON.stringify({ type: 'notification', payload: notification }));
       sentCount++;
       console.log(`WebSocket notification sent to: ${userData.name}`);
+    } else {
+      console.log(`Skipping user ${userData.name}: role match=${roleMatches}, hostel match=${hostelMatches}`);
     }
   });
   
@@ -521,14 +530,25 @@ const checkPaymentReminders = async () => {
         // Send reminder 1 day before due date (once per day)
         if (dueDateStr === tomorrowStr) {
           if (!lastNotification || (now.getTime() - lastNotification) >= 24 * 60 * 60 * 1000) {
-            sendNotification({
-              type: 'payment',
-              title: 'Payment Reminder',
-              message: `Your rent payment of ₹${tenant.rent} is due tomorrow (${dueDate.toLocaleDateString()}). Please make the payment to avoid late fees.`,
-              priority: 'high',
-              createdAt: now.toISOString(),
-              tenantId: tenant.id
-            }, 'tenant', tenant.hostelId);
+            // Send payment reminder to tenant by email
+            const tenantUser = data.users.find(u => u.name === tenant.name && u.role === 'tenant');
+            if (tenantUser) {
+              const paymentNotification = {
+                type: 'payment',
+                title: 'Payment Reminder',
+                message: `Your rent payment of ₹${tenant.rent} is due tomorrow (${dueDate.toLocaleDateString()}). Please make the payment to avoid late fees.`,
+                priority: 'high',
+                createdAt: now.toISOString(),
+                tenantId: tenant.id
+              };
+              
+              connectedUsers.forEach((userData, ws) => {
+                if (ws.readyState === WebSocket.OPEN && userData.email === tenantUser.email) {
+                  ws.send(JSON.stringify({ type: 'notification', payload: paymentNotification }));
+                  console.log(`Payment reminder sent to: ${userData.name} (${userData.email})`);
+                }
+              });
+            }
             notificationLog.set(notificationKey, now.getTime());
           }
         }
@@ -540,14 +560,25 @@ const checkPaymentReminders = async () => {
           
           if (!lastOverdueNotification || (now.getTime() - lastOverdueNotification) >= 12 * 60 * 60 * 1000) {
             const daysOverdue = Math.floor((now.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24));
-            sendNotification({
-              type: 'payment',
-              title: 'Payment Overdue',
-              message: `Your rent payment of ₹${tenant.rent} is ${daysOverdue} day(s) overdue. Please make the payment immediately to avoid penalties.`,
-              priority: 'high',
-              createdAt: now.toISOString(),
-              tenantId: tenant.id
-            }, 'tenant', tenant.hostelId);
+            // Send overdue payment notification to tenant by email
+            const tenantUser = data.users.find(u => u.name === tenant.name && u.role === 'tenant');
+            if (tenantUser) {
+              const overdueNotification = {
+                type: 'payment',
+                title: 'Payment Overdue',
+                message: `Your rent payment of ₹${tenant.rent} is ${daysOverdue} day(s) overdue. Please make the payment immediately to avoid penalties.`,
+                priority: 'high',
+                createdAt: now.toISOString(),
+                tenantId: tenant.id
+              };
+              
+              connectedUsers.forEach((userData, ws) => {
+                if (ws.readyState === WebSocket.OPEN && userData.email === tenantUser.email) {
+                  ws.send(JSON.stringify({ type: 'notification', payload: overdueNotification }));
+                  console.log(`Overdue payment notification sent to: ${userData.name} (${userData.email})`);
+                }
+              });
+            }
             notificationLog.set(overdueKey, now.getTime());
           }
         }
@@ -685,15 +716,29 @@ app.post('/api/test-notification', async (req, res) => {
   try {
     const { targetRole, hostelId, message } = req.body;
     
-    sendNotification({
+    console.log('Test notification request:', { targetRole, hostelId, message });
+    console.log('Connected users:', connectedUsers.size);
+    
+    // List all connected users
+    connectedUsers.forEach((userData, ws) => {
+      console.log('Connected user:', userData);
+    });
+    
+    const notification = {
       type: 'test',
       title: 'Test Notification',
       message: message || 'This is a test notification',
       priority: 'medium',
       createdAt: new Date().toISOString()
-    }, targetRole, hostelId);
+    };
     
-    res.json({ message: 'Test notification sent', connectedUsers: connectedUsers.size });
+    await sendNotification(notification, targetRole, hostelId);
+    
+    res.json({ 
+      message: 'Test notification sent', 
+      connectedUsers: connectedUsers.size,
+      notification 
+    });
   } catch (error) {
     console.error('Test notification error:', error);
     res.status(500).json({ error: error.message });
@@ -770,15 +815,27 @@ app.post('/api/complaints/:id/comments', async (req, res) => {
       }
     } else {
       // Tenant commented, notify admin
-      sendNotification({
-        type: 'complaint_comment',
-        title: 'New Comment on Complaint',
-        message: `${author} added a comment to complaint "${complaint.title}"`,
-        priority: 'medium',
-        createdAt: newComment.createdAt,
-        complaintId: complaint.id,
-        url: `/admin/complaints?complaintId=${complaint.id}&openComments=true`
-      }, 'admin', complaint.hostelId);
+      const commentHostel = data.hostels.find(h => h.id === complaint.hostelId);
+      if (commentHostel && commentHostel.contactEmail) {
+        const commentNotification = {
+          type: 'complaint_comment',
+          title: 'New Comment on Complaint',
+          message: `${author} added a comment to complaint "${complaint.title}"`,
+          priority: 'medium',
+          createdAt: newComment.createdAt,
+          complaintId: complaint.id,
+          url: `/admin/complaints?complaintId=${complaint.id}&openComments=true`
+        };
+        
+        connectedUsers.forEach((userData, ws) => {
+          if (ws.readyState === WebSocket.OPEN && 
+              userData.email === commentHostel.contactEmail && 
+              (userData.role === 'admin' || userData.role === 'receptionist')) {
+            ws.send(JSON.stringify({ type: 'notification', payload: commentNotification }));
+            console.log(`Comment notification sent to: ${userData.name} (${userData.email})`);
+          }
+        });
+      }
     }
     
     res.json({ comment: newComment, complaint });
@@ -902,14 +959,27 @@ app.post('/api/complaints', upload.array('attachments', 5), async (req, res) => 
     // Initialize comments array
     newItem.comments = [];
     
-    sendNotification({
-      type: 'complaint',
-      title: 'New Complaint',
-      message: `${newItem.title} - ${newItem.tenantName}`,
-      priority: newItem.priority || 'medium',
-      createdAt: newItem.createdAt,
-      complaintId: newItem.id
-    }, 'admin', newItem.hostelId);
+    // Send complaint notification directly to hostel contact email
+    const complaintHostel = data.hostels.find(h => h.id === newItem.hostelId);
+    if (complaintHostel && complaintHostel.contactEmail) {
+      const complaintNotification = {
+        type: 'complaint',
+        title: 'New Complaint',
+        message: `${newItem.title} - ${newItem.tenantName}`,
+        priority: newItem.priority || 'medium',
+        createdAt: newItem.createdAt,
+        complaintId: newItem.id
+      };
+      
+      connectedUsers.forEach((userData, ws) => {
+        if (ws.readyState === WebSocket.OPEN && 
+            userData.email === complaintHostel.contactEmail && 
+            (userData.role === 'admin' || userData.role === 'receptionist')) {
+          ws.send(JSON.stringify({ type: 'notification', payload: complaintNotification }));
+          console.log(`Complaint notification sent to: ${userData.name} (${userData.email})`);
+        }
+      });
+    }
     
     console.log('Created complaint:', newItem.id);
     res.json(newItem);
@@ -920,7 +990,7 @@ app.post('/api/complaints', upload.array('attachments', 5), async (req, res) => 
 });
 
 // Generic routes for all entities (excluding complaints which has special handling above)
-const entities = ['hostels', 'tenants', 'rooms', 'payments', 'users', 'expenses', 'staff', 'hostelRequests', 'notices', 'checkoutRequests', 'hostelSettings', 'supportTickets'];
+const entities = ['hostels', 'tenants', 'rooms', 'payments', 'users', 'expenses', 'staff', 'hostelRequests', 'notices', 'checkoutRequests', 'hostelSettings', 'notifications', 'supportTickets'];
 
 // Add complaints GET, PUT, DELETE routes separately
 app.get('/api/complaints', async (req, res) => {
@@ -1155,14 +1225,26 @@ entities.forEach(entity => {
         }
         
         // Send notification to admin when new tenant is added
-        sendNotification({
-          type: 'tenant',
-          title: 'New Tenant Joined',
-          message: `${newItem.name} has joined the hostel in room ${newItem.room}. Welcome the new tenant!`,
-          priority: 'medium',
-          createdAt: new Date().toISOString(),
-          tenantId: newItem.id
-        }, 'admin', newItem.hostelId);
+        const tenantHostel = data.hostels.find(h => h.id === newItem.hostelId);
+        if (tenantHostel && tenantHostel.contactEmail) {
+          const tenantNotification = {
+            type: 'tenant',
+            title: 'New Tenant Joined',
+            message: `${newItem.name} has joined the hostel in room ${newItem.room}. Welcome the new tenant!`,
+            priority: 'medium',
+            createdAt: new Date().toISOString(),
+            tenantId: newItem.id
+          };
+          
+          connectedUsers.forEach((userData, ws) => {
+            if (ws.readyState === WebSocket.OPEN && 
+                userData.email === tenantHostel.contactEmail && 
+                (userData.role === 'admin' || userData.role === 'receptionist')) {
+              ws.send(JSON.stringify({ type: 'notification', payload: tenantNotification }));
+              console.log(`Tenant notification sent to: ${userData.name} (${userData.email})`);
+            }
+          });
+        }
       }
       
       // Check unique constraints within hostel scope
@@ -1202,56 +1284,187 @@ entities.forEach(entity => {
       await writeData(data);
       
       if (entity === 'hostelRequests') {
-        sendNotification({
+        // Notify master admin of new hostel requests
+        const masterAdminNotification = {
           type: 'hostelRequest',
           title: 'New Hostel Request',
           message: `${newItem.hostelName} - ${newItem.name}`,
           priority: 'medium',
           createdAt: newItem.createdAt,
           requestId: newItem.id
-        }, 'master_admin', null);
+        };
+        
+        connectedUsers.forEach((userData, ws) => {
+          if (ws.readyState === WebSocket.OPEN && userData.role === 'master_admin') {
+            ws.send(JSON.stringify({ type: 'notification', payload: masterAdminNotification }));
+            console.log(`Hostel request notification sent to: ${userData.name}`);
+          }
+        });
       } else if (entity === 'supportTickets') {
-        sendNotification({
+        // Notify master admin of new support tickets
+        const supportNotification = {
           type: 'support',
           title: 'New Support Ticket',
           message: `${newItem.subject} - ${newItem.submittedBy}`,
           priority: newItem.priority || 'medium',
           createdAt: newItem.createdAt,
           ticketId: newItem.id
-        }, 'master_admin', null);
-      } else if (entity === 'checkoutRequests') {
-        // Send checkout request notification to admin and receptionist
-        sendNotification({
-          type: 'checkout',
-          title: 'Checkout Request',
-          message: `${newItem.tenantName} has requested to checkout from room ${newItem.roomNumber}. Please review the request.`,
-          priority: 'high',
-          createdAt: newItem.createdAt,
-          checkoutId: newItem.id
-        }, 'admin', newItem.hostelId);
+        };
         
-        sendNotification({
-          type: 'checkout',
-          title: 'Checkout Request',
-          message: `${newItem.tenantName} has requested to checkout from room ${newItem.roomNumber}. Please review the request.`,
-          priority: 'high',
-          createdAt: newItem.createdAt,
-          checkoutId: newItem.id
-        }, 'receptionist', newItem.hostelId);
-      } else if (entity === 'payments' && newItem.type === 'rent') {
-        // Update tenant's next due date when rent is paid (based on joining date)
-        const tenantIndex = data.tenants.findIndex(t => t.id === newItem.tenantId);
-        if (tenantIndex !== -1) {
-          const tenant = data.tenants[tenantIndex];
-          const joiningDate = new Date(tenant.joiningDate);
-          const paymentDate = new Date(newItem.paymentDate);
+        connectedUsers.forEach((userData, ws) => {
+          if (ws.readyState === WebSocket.OPEN && userData.role === 'master_admin') {
+            ws.send(JSON.stringify({ type: 'notification', payload: supportNotification }));
+            console.log(`Support ticket notification sent to: ${userData.name}`);
+          }
+        });
+      } else if (entity === 'rooms') {
+        // Notify hostel admin when new room is added
+        const roomHostel = data.hostels.find(h => h.id === newItem.hostelId);
+        if (roomHostel && roomHostel.contactEmail) {
+          const roomNotification = {
+            type: 'new_room',
+            title: 'New Room Added',
+            message: `Room ${newItem.roomNumber} has been added to the hostel.`,
+            priority: 'low',
+            createdAt: new Date().toISOString(),
+            roomId: newItem.id
+          };
           
-          // Calculate next due date on same day of next month as joining date
-          let nextDueDate = new Date(paymentDate.getFullYear(), paymentDate.getMonth() + 1, joiningDate.getDate());
+          connectedUsers.forEach((userData, ws) => {
+            if (ws.readyState === WebSocket.OPEN && 
+                userData.email === roomHostel.contactEmail && 
+                userData.role === 'admin') {
+              ws.send(JSON.stringify({ type: 'notification', payload: roomNotification }));
+              console.log(`Room notification sent to: ${userData.name}`);
+            }
+          });
+        }
+      } else if (entity === 'checkoutRequests') {
+        // Send checkout request notification to admin
+        const checkoutHostel = data.hostels.find(h => h.id === newItem.hostelId);
+        if (checkoutHostel && checkoutHostel.contactEmail) {
+          const checkoutNotification = {
+            type: 'checkout',
+            title: 'Checkout Request',
+            message: `${newItem.tenantName} has requested to checkout from room ${newItem.roomNumber}. Please review the request.`,
+            priority: 'high',
+            createdAt: newItem.createdAt,
+            checkoutId: newItem.id
+          };
           
-          tenant.nextDueDate = nextDueDate.toISOString().split('T')[0];
-          tenant.lastPaymentDate = newItem.paymentDate;
-          await writeData(data);
+          connectedUsers.forEach((userData, ws) => {
+            if (ws.readyState === WebSocket.OPEN && 
+                userData.email === checkoutHostel.contactEmail && 
+                (userData.role === 'admin' || userData.role === 'receptionist')) {
+              ws.send(JSON.stringify({ type: 'notification', payload: checkoutNotification }));
+              console.log(`Checkout notification sent to: ${userData.name} (${userData.email})`);
+            }
+          });
+        }
+      } else if (entity === 'notices') {
+        // Notify all users in the hostel when new notice is posted
+        const noticeHostel = data.hostels.find(h => h.id === newItem.hostelId);
+        if (noticeHostel && noticeHostel.contactEmail) {
+          const noticeNotification = {
+            type: 'new_notice',
+            title: 'New Notice Posted',
+            message: `New notice: ${newItem.title}`,
+            priority: newItem.priority || 'medium',
+            createdAt: new Date().toISOString(),
+            noticeId: newItem.id
+          };
+          
+          // Notify all users in this hostel
+          connectedUsers.forEach((userData, ws) => {
+            if (ws.readyState === WebSocket.OPEN && 
+                (userData.hostelId === newItem.hostelId || userData.email === noticeHostel.contactEmail)) {
+              ws.send(JSON.stringify({ type: 'notification', payload: noticeNotification }));
+              console.log(`Notice notification sent to: ${userData.name}`);
+            }
+          });
+        }
+      } else if (entity === 'staff') {
+        // Notify hostel admin when new staff is added
+        const staffHostel = data.hostels.find(h => h.id === newItem.hostelId);
+        if (staffHostel && staffHostel.contactEmail) {
+          const staffNotification = {
+            type: 'new_staff',
+            title: 'New Staff Added',
+            message: `${newItem.name} has been added as ${newItem.position || 'staff member'}.`,
+            priority: 'medium',
+            createdAt: new Date().toISOString(),
+            staffId: newItem.id
+          };
+          
+          connectedUsers.forEach((userData, ws) => {
+            if (ws.readyState === WebSocket.OPEN && 
+                userData.email === staffHostel.contactEmail && 
+                userData.role === 'admin') {
+              ws.send(JSON.stringify({ type: 'notification', payload: staffNotification }));
+              console.log(`Staff notification sent to: ${userData.name}`);
+            }
+          });
+        }
+      } else if (entity === 'expenses') {
+        // Notify hostel admin when new expense is added
+        const expenseHostel = data.hostels.find(h => h.id === newItem.hostelId);
+        if (expenseHostel && expenseHostel.contactEmail) {
+          const expenseNotification = {
+            type: 'new_expense',
+            title: 'New Expense Added',
+            message: `New expense: ${newItem.description} - ₹${newItem.amount}`,
+            priority: 'low',
+            createdAt: new Date().toISOString(),
+            expenseId: newItem.id
+          };
+          
+          connectedUsers.forEach((userData, ws) => {
+            if (ws.readyState === WebSocket.OPEN && 
+                userData.email === expenseHostel.contactEmail && 
+                userData.role === 'admin') {
+              ws.send(JSON.stringify({ type: 'notification', payload: expenseNotification }));
+              console.log(`Expense notification sent to: ${userData.name}`);
+            }
+          });
+        }
+      } else if (entity === 'payments') {
+        // Notify hostel admin when payment is added
+        const paymentHostel = data.hostels.find(h => h.id === newItem.hostelId);
+        if (paymentHostel && paymentHostel.contactEmail) {
+          const paymentNotification = {
+            type: 'payment_added',
+            title: 'New Payment Added',
+            message: `Payment of ₹${newItem.amount} has been added for ${newItem.tenantName || 'tenant'}.`,
+            priority: 'medium',
+            createdAt: new Date().toISOString(),
+            paymentId: newItem.id
+          };
+          
+          connectedUsers.forEach((userData, ws) => {
+            if (ws.readyState === WebSocket.OPEN && 
+                userData.email === paymentHostel.contactEmail && 
+                (userData.role === 'admin' || userData.role === 'receptionist')) {
+              ws.send(JSON.stringify({ type: 'notification', payload: paymentNotification }));
+              console.log(`Payment notification sent to: ${userData.name} (${userData.email})`);
+            }
+          });
+        }
+        
+        // Update tenant's next due date when rent is paid
+        if (newItem.type === 'rent') {
+          const tenantIndex = data.tenants.findIndex(t => t.id === newItem.tenantId);
+          if (tenantIndex !== -1) {
+            const tenant = data.tenants[tenantIndex];
+            const joiningDate = new Date(tenant.joiningDate);
+            const paymentDate = new Date(newItem.paymentDate);
+            
+            // Calculate next due date on same day of next month as joining date
+            let nextDueDate = new Date(paymentDate.getFullYear(), paymentDate.getMonth() + 1, joiningDate.getDate());
+            
+            tenant.nextDueDate = nextDueDate.toISOString().split('T')[0];
+            tenant.lastPaymentDate = newItem.paymentDate;
+            await writeData(data);
+          }
         }
       }
       
@@ -1266,6 +1479,9 @@ entities.forEach(entity => {
   // PUT update
   app.put(`/api/${entity}/:id`, async (req, res) => {
     try {
+      console.log(`UPDATE REQUEST: ${entity}/${req.params.id}`);
+      console.log('Request body:', req.body);
+      
       const data = await readData();
       
       // Ensure entity array exists
@@ -1279,12 +1495,66 @@ entities.forEach(entity => {
       }
       
       const originalItem = data[entity][index];
+      console.log('Original item:', originalItem);
+      
       const updatedItem = { 
         ...originalItem, 
         ...req.body, 
         id: req.params.id,
         updatedAt: new Date().toISOString()
       };
+      
+      console.log('Updated item:', updatedItem);
+      
+      // Send notifications for payment approval
+      if (entity === 'payments' && originalItem.status !== updatedItem.status && updatedItem.status === 'approved') {
+        console.log(`PAYMENT APPROVED: ${updatedItem.id}`);
+        
+        // Notify receptionist
+        const paymentHostel = data.hostels.find(h => h.id === updatedItem.hostelId);
+        if (paymentHostel && paymentHostel.contactEmail) {
+          const approvalNotification = {
+            type: 'payment_approved',
+            title: 'Payment Approved',
+            message: `Payment of ₹${updatedItem.amount} for ${updatedItem.tenantName || 'tenant'} has been approved.`,
+            priority: 'medium',
+            createdAt: new Date().toISOString(),
+            paymentId: updatedItem.id
+          };
+          
+          connectedUsers.forEach((userData, ws) => {
+            if (ws.readyState === WebSocket.OPEN && 
+                userData.email === paymentHostel.contactEmail && 
+                userData.role === 'receptionist') {
+              ws.send(JSON.stringify({ type: 'notification', payload: approvalNotification }));
+              console.log(`Payment approval notification sent to receptionist: ${userData.name}`);
+            }
+          });
+        }
+        
+        // Notify tenant
+        const tenant = data.tenants.find(t => t.id === updatedItem.tenantId);
+        if (tenant) {
+          const tenantUser = data.users.find(u => u.name === tenant.name && u.role === 'tenant');
+          if (tenantUser) {
+            const tenantApprovalNotification = {
+              type: 'payment_approved',
+              title: 'Payment Approved',
+              message: `Your payment of ₹${updatedItem.amount} has been approved. Thank you!`,
+              priority: 'medium',
+              createdAt: new Date().toISOString(),
+              paymentId: updatedItem.id
+            };
+            
+            connectedUsers.forEach((userData, ws) => {
+              if (ws.readyState === WebSocket.OPEN && userData.email === tenantUser.email) {
+                ws.send(JSON.stringify({ type: 'notification', payload: tenantApprovalNotification }));
+                console.log(`Payment approval notification sent to tenant: ${userData.name}`);
+              }
+            });
+          }
+        }
+      }
       
       // Check unique constraints within hostel scope (excluding current item)
       const uniqueFields = {
@@ -1320,7 +1590,95 @@ entities.forEach(entity => {
         }
       }
       
-      // Hostel request approval is now handled by frontend - no backend hostel creation
+      // Send notifications for hostel status changes
+      if (entity === 'hostels' && originalItem.status !== updatedItem.status) {
+        console.log(`HOSTEL STATUS CHANGED: ${originalItem.status} -> ${updatedItem.status} for hostel ${updatedItem.id}`);
+        
+        const statusChangeNotification = {
+          type: 'hostel_status_change',
+          title: updatedItem.status === 'active' ? 'Hostel Activated' : 'Hostel Deactivated',
+          message: `Your hostel "${updatedItem.displayName || updatedItem.name}" has been ${updatedItem.status === 'active' ? 'activated' : 'deactivated'} by Master Admin.`,
+          priority: 'high',
+          createdAt: new Date().toISOString(),
+          hostelId: updatedItem.id
+        };
+        
+        console.log('Sending notification to hostel contact:', updatedItem.contactEmail);
+        
+        // Send directly to hostel contact email instead of using hostelId matching
+        connectedUsers.forEach((userData, ws) => {
+          if (ws.readyState === WebSocket.OPEN && 
+              userData.email === updatedItem.contactEmail && 
+              (userData.role === 'admin' || userData.role === 'receptionist')) {
+            ws.send(JSON.stringify({ type: 'notification', payload: statusChangeNotification }));
+            console.log(`Direct notification sent to: ${userData.name} (${userData.email})`);
+          }
+        });
+        
+        console.log('Notifications sent for hostel status change');
+      }
+      
+      // Send notifications for user status changes (activation/deactivation)
+      if (entity === 'users' && originalItem.status !== updatedItem.status && updatedItem.role !== 'master_admin') {
+        const userStatusNotification = {
+          type: 'user_status_change',
+          title: updatedItem.status === 'active' ? 'Account Activated' : 'Account Deactivated',
+          message: updatedItem.status === 'active' 
+            ? 'Your account has been activated. You can now access the system.'
+            : 'Your account has been deactivated. Please contact administrator.',
+          priority: 'high',
+          createdAt: new Date().toISOString()
+        };
+        
+        connectedUsers.forEach((userData, ws) => {
+          if (ws.readyState === WebSocket.OPEN && userData.email === updatedItem.email) {
+            ws.send(JSON.stringify({ type: 'notification', payload: userStatusNotification }));
+            console.log(`User status notification sent to: ${userData.name}`);
+          }
+        });
+      }
+      
+      // Send notifications for tenant status changes
+      if (entity === 'tenants' && originalItem.status !== updatedItem.status) {
+        const tenantUser = data.users.find(u => u.name === updatedItem.name && u.role === 'tenant');
+        if (tenantUser) {
+          const tenantStatusNotification = {
+            type: 'tenant_status_change',
+            title: 'Tenant Status Updated',
+            message: `Your tenant status has been updated to ${updatedItem.status}.`,
+            priority: 'medium',
+            createdAt: new Date().toISOString()
+          };
+          
+          connectedUsers.forEach((userData, ws) => {
+            if (ws.readyState === WebSocket.OPEN && userData.email === tenantUser.email) {
+              ws.send(JSON.stringify({ type: 'notification', payload: tenantStatusNotification }));
+              console.log(`Tenant status notification sent to: ${userData.name}`);
+            }
+          });
+        }
+      }
+      
+      // Send notifications for room assignments/changes
+      if (entity === 'tenants' && originalItem.room !== updatedItem.room) {
+        const tenantUser = data.users.find(u => u.name === updatedItem.name && u.role === 'tenant');
+        if (tenantUser) {
+          const roomChangeNotification = {
+            type: 'room_change',
+            title: 'Room Assignment Updated',
+            message: `Your room has been changed from ${originalItem.room || 'unassigned'} to ${updatedItem.room}.`,
+            priority: 'medium',
+            createdAt: new Date().toISOString()
+          };
+          
+          connectedUsers.forEach((userData, ws) => {
+            if (ws.readyState === WebSocket.OPEN && userData.email === tenantUser.email) {
+              ws.send(JSON.stringify({ type: 'notification', payload: roomChangeNotification }));
+              console.log(`Room change notification sent to: ${userData.name}`);
+            }
+          });
+        }
+      }
       
       data[entity][index] = updatedItem;
       
