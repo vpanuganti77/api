@@ -33,6 +33,40 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 
+// Login endpoint without domain validation
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    const users = await db.getAll('users');
+    
+    const user = users.find(u => u.email === email);
+    
+    if (!user) {
+      return res.status(404).json({ message: 'User account not found. Please check your email or contact administrator.' });
+    }
+    
+    if (user.password !== password) {
+      return res.status(401).json({ message: 'Invalid credentials.' });
+    }
+    
+    if (user.status === 'inactive') {
+      return res.status(401).json({ message: 'Account is deactivated. Please contact your administrator.' });
+    }
+    
+    // Return user data (excluding password)
+    const { password: _, ...userWithoutPassword } = user;
+    
+    res.json({
+      message: 'Login successful',
+      user: userWithoutPassword
+    });
+    
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 // Serve uploaded files
 app.get('/api/uploads/complaints/:filename', (req, res) => {
   const filename = req.params.filename;

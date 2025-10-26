@@ -1,31 +1,24 @@
 {
   "hostels": [
     {
-      "name": "TLR",
+      "id": "1761486320903",
+      "name": "TLR_1761486320881",
+      "displayName": "TLR",
       "address": "Hyderabad",
+      "contactPerson": "Venkatesh Panuganti",
+      "contactEmail": "venkateshpanuganti@tlr.com",
+      "originalContactEmail": "vpanuganti13@gmail.com",
+      "contactPhone": "9908227236",
       "planType": "free_trial",
-      "planStatus": "trial",
-      "trialExpiryDate": "2025-11-23",
-      "adminName": "Venkatesh Panuganti",
-      "adminEmail": "vpanuganti13@gmail.com",
-      "adminPhone": "9908227236",
       "status": "active",
-      "totalRooms": 0,
-      "occupiedRooms": 0,
-      "createdAt": "2025-10-24T20:04:18.350Z",
-      "updatedAt": "2025-10-24T20:04:18.350Z",
-      "id": "1761336258350"
-    },
-    {
-      "id": "1761336258452",
-      "name": "TLR",
-      "address": "Hyderabad",
-      "phone": "9908227236",
-      "email": "vpanuganti13@gmail.com",
-      "status": "active",
-      "planType": "free_trial",
-      "createdAt": "2025-10-24T20:04:18.452Z",
-      "updatedAt": "2025-10-24T20:04:18.452Z"
+      "domain": "tlr.com",
+      "allowedDomains": [
+        "tlr.com"
+      ],
+      "trialExpiryDate": "2025-11-25T13:45:20.881Z",
+      "createdAt": "2025-10-26T13:45:20.903Z",
+      "createdBy": "Master Admin",
+      "updatedAt": "2025-10-26T13:45:20.903Z"
     }
   ],
   "tenants": [],
@@ -34,58 +27,28 @@
   "complaints": [],
   "users": [
     {
-      "id": "1761336229701",
-      "name": "Venkatesh Panuganti",
-      "email": "vpanuganti13@gmail.com",
-      "password": "ozzrjw7h",
-      "phone": "9908227236",
-      "role": "admin",
-      "hostelName": "TLR",
-      "hostelId": "req_1761336229241_stob1ay1m",
-      "status": "pending_approval",
-      "createdAt": "2025-10-24T20:03:49.701Z",
-      "requestId": "req_1761336229241_stob1ay1m",
-      "updatedAt": "2025-10-24T20:03:49.701Z"
-    },
-    {
+      "id": "1761486300293",
       "name": "Venkatesh Panuganti",
       "email": "venkateshpanuganti@tlr.com",
+      "originalEmail": "vpanuganti13@gmail.com",
+      "password": "v82vygkk",
       "phone": "9908227236",
       "role": "admin",
-      "password": "admin8w0svo",
-      "hostelId": "1761336258350",
       "hostelName": "TLR",
+      "hostelId": "1761486320903",
       "status": "active",
-      "createdAt": "2025-10-24T20:04:18.416Z",
-      "updatedAt": "2025-10-24T20:04:18.416Z",
-      "id": "1761336258416",
-      "userCredentials": {
-        "email": "venkateshpanuganti@tlr.com",
-        "password": "admin8w0svo",
-        "loginUrl": "https://pgflow.netlify.app/login?email=venkateshpanuganti%40tlr.com&password=admin8w0svo"
-      },
-      "failedLoginAttempts": 1
-    },
-    {
-      "id": "1761336258453",
-      "name": "Venkatesh Panuganti",
-      "email": "venkateshpanuganti@tlr.com",
-      "phone": "9908227236",
-      "role": "admin",
-      "password": "adminutmma4",
-      "hostelId": "1761336258452",
-      "hostelName": "TLR",
-      "status": "active",
-      "firstLogin": true,
-      "createdAt": "2025-10-24T20:04:18.453Z",
-      "updatedAt": "2025-10-24T20:04:18.453Z"
+      "createdAt": "2025-10-26T13:45:00.294Z",
+      "requestId": "req_1761486299719_1qoxglag7",
+      "updatedAt": "2025-10-26T13:45:20.953Z",
+      "failedLoginAttempts": 0,
+      "approvedAt": "2025-10-26T13:45:20.940Z"
     }
   ],
   "expenses": [],
   "staff": [],
   "hostelRequests": [
     {
-      "id": "1761336229594",
+      "id": "1761486300123",
       "name": "Venkatesh Panuganti",
       "email": "vpanuganti13@gmail.com",
       "phone": "9908227236",
@@ -94,19 +57,17 @@
       "planType": "free_trial",
       "message": "",
       "status": "approved",
-      "isRead": true,
-      "submittedAt": "2025-10-24T20:03:49.241Z",
-      "tempPassword": "ozzrjw7h",
-      "createdAt": "2025-10-24T20:03:49.595Z",
-      "updatedAt": "2025-10-24T20:04:18.452Z",
-      "processedAt": "2025-10-24T20:04:18.333Z",
-      "userCredentials": {
-        "email": "venkateshpanuganti@tlr.com",
-        "password": "adminutmma4",
-        "loginUrl": "https://pgflow.netlify.app/login?email=venkateshpanuganti%40tlr.com&password=adminutmma4"
-      },
-      "hostelId": "1761336258452"
+      "isRead": false,
+      "submittedAt": "2025-10-26T13:44:59.719Z",
+      "tempPassword": "v82vygkk",
+      "createdAt": "2025-10-26T13:45:00.123Z",
+      "updatedAt": "2025-10-26T13:45:20.970Z",
+      "processedAt": "2025-10-26T13:45:20.960Z",
+      "hostelId": "1761486320903"
     }
   ],
-  "notices": []
+  "notices": [],
+  "checkoutRequests": [],
+  "hostelSettings": [],
+  "supportTickets": []
 }

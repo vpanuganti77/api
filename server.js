@@ -291,10 +291,30 @@ app.post('/api/auth/login', async (req, res) => {
         return res.status(401).json({ message: 'Hostel not found. Please contact administrator.' });
       }
       
-      // Check if email matches hostel domain
-      const expectedDomain = hostel.name.toLowerCase().replace(/[^a-z0-9]/g, '') + '.com';
+      // Check if email matches hostel domain using contactEmail or allowedDomains
       const emailDomain = email.split('@')[1];
-      if (emailDomain !== expectedDomain) {
+      let isValidDomain = false;
+      
+      // Check against hostel's contactEmail domain
+      if (hostel.contactEmail) {
+        const hostelContactDomain = hostel.contactEmail.split('@')[1];
+        if (emailDomain === hostelContactDomain) {
+          isValidDomain = true;
+        }
+      }
+      
+      // Check against allowedDomains array
+      if (!isValidDomain && hostel.allowedDomains && Array.isArray(hostel.allowedDomains)) {
+        isValidDomain = hostel.allowedDomains.includes(emailDomain);
+      }
+      
+      // Fallback to generated domain from hostel name
+      if (!isValidDomain) {
+        const expectedDomain = hostel.name.toLowerCase().replace(/[^a-z0-9]/g, '') + '.com';
+        isValidDomain = emailDomain === expectedDomain;
+      }
+      
+      if (!isValidDomain) {
         return res.status(401).json({ message: 'Invalid email domain for this hostel.' });
       }
     }
