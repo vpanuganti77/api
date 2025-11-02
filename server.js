@@ -951,7 +951,7 @@ app.post('/api/hostelRequests/:id/approve', async (req, res) => {
         phone: originalItem.phone,
         role: 'admin',
         password: password,
-        hostelId: originalItem.id,
+        hostelId: originalItem.hostelId,
         hostelName: originalItem.hostelName,
         status: 'active',
         firstLogin: true,
