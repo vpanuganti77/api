@@ -876,8 +876,9 @@ app.post('/api/hostelRequests/:id/approve', async (req, res) => {
       hostel = existingHostel;
       hostelId = existingHostel.id;
     } else {
-      // Create hostel entry without timestamp
-      hostelId = `hostel_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      // Use hostelId from request (generated during setup)
+      hostelId = originalItem.hostelId;
+      console.log('Using hostelId from request:', hostelId);
       
       const cleanHostelName = originalItem.hostelName.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 10);
       const hostelDomain = cleanHostelName + '.com';
