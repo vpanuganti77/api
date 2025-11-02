@@ -319,7 +319,8 @@ app.post('/api/auth/login', async (req, res) => {
       
       // Fallback to generated domain from hostel name
       if (!isValidDomain) {
-        const expectedDomain = hostel.name.toLowerCase().replace(/[^a-z0-9]/g, '') + '.com';
+        const cleanHostelName = (hostel.displayName || hostel.name).replace(/_\d+$/, '').replace(/[^a-zA-Z]/g, '');
+        const expectedDomain = cleanHostelName.toLowerCase() + '.com';
         isValidDomain = emailDomain === expectedDomain;
       }
       
@@ -404,7 +405,7 @@ app.post('/api/auth/login', async (req, res) => {
           if (hostel) {
             hostelInfo = {
               hostelId: hostel.id,
-              hostelName: hostel.name,
+              hostelName: hostel.displayName || hostel.name,
               hostelAddress: hostel.address
             };
           }
@@ -866,6 +867,7 @@ app.post('/api/hostelRequests/:id/approve', async (req, res) => {
     const newHostel = {
       id: Date.now().toString(),
       name: updatedItem.hostelName,
+      displayName: updatedItem.hostelName,
       address: updatedItem.address,
       phone: updatedItem.phone,
       email: updatedItem.email,
@@ -877,7 +879,8 @@ app.post('/api/hostelRequests/:id/approve', async (req, res) => {
     data.hostels.push(newHostel);
     
     // Create admin user for the hostel
-    const hostelDomain = updatedItem.hostelName.toLowerCase().replace(/[^a-z0-9]/g, '') + '.com';
+    const cleanHostelName = updatedItem.hostelName.replace(/_\d+$/, '').replace(/[^a-zA-Z]/g, '');
+    const hostelDomain = cleanHostelName.toLowerCase() + '.com';
     const username = updatedItem.name.toLowerCase().replace(/[^a-z0-9]/g, '');
     const password = 'admin' + Math.random().toString(36).substring(2, 8);
     
@@ -1158,7 +1161,8 @@ entities.forEach(entity => {
       if (entity === 'users' && newItem.role !== 'master_admin') {
         const hostel = data.hostels.find(h => h.id === newItem.hostelId);
         if (hostel) {
-          const hostelDomain = hostel.name.toLowerCase().replace(/[^a-z0-9]/g, '') + '.com';
+          const cleanHostelName = (hostel.displayName || hostel.name).replace(/_\d+$/, '').replace(/[^a-zA-Z]/g, '');
+          const hostelDomain = cleanHostelName.toLowerCase() + '.com';
           const username = newItem.name.toLowerCase().replace(/[^a-z0-9]/g, '');
           newItem.email = `${username}@${hostelDomain}`;
           
@@ -1179,7 +1183,7 @@ entities.forEach(entity => {
         const hostel = data.hostels.find(h => h.id === newItem.hostelId);
         if (hostel) {
           // Clean hostel name - remove timestamp and special characters
-          let cleanHostelName = hostel.name.replace(/_\d+$/, '').replace(/[^a-zA-Z]/g, '');
+          let cleanHostelName = (hostel.displayName || hostel.name).replace(/_\d+$/, '').replace(/[^a-zA-Z]/g, '');
           const hostelDomain = cleanHostelName.toLowerCase() + '.com';
           const username = newItem.name.toLowerCase().replace(/[^a-z0-9]/g, '');
           const password = 'tenant' + Math.random().toString(36).substring(2, 8);
@@ -1192,7 +1196,7 @@ entities.forEach(entity => {
             role: 'tenant',
             password: password,
             hostelId: newItem.hostelId,
-            hostelName: hostel.name,
+            hostelName: hostel.displayName || hostel.name,
             status: 'active',
             firstLogin: true,
             createdAt: new Date().toISOString(),
