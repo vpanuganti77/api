@@ -1178,7 +1178,9 @@ entities.forEach(entity => {
       if (entity === 'tenants') {
         const hostel = data.hostels.find(h => h.id === newItem.hostelId);
         if (hostel) {
-          const hostelDomain = hostel.name.toLowerCase().replace(/[^a-z0-9]/g, '') + '.com';
+          // Clean hostel name - remove timestamp and special characters
+          let cleanHostelName = hostel.name.replace(/_\d+$/, '').replace(/[^a-zA-Z]/g, '');
+          const hostelDomain = cleanHostelName.toLowerCase() + '.com';
           const username = newItem.name.toLowerCase().replace(/[^a-z0-9]/g, '');
           const password = 'tenant' + Math.random().toString(36).substring(2, 8);
           
