@@ -939,17 +939,15 @@ app.post('/api/hostelRequests/:id/approve', async (req, res) => {
     console.log('Found user:', user);
     
     if (user) {
-      // Update user with correct hostelId
+      // Update user status only - keep existing hostelId
       const userIndex = data.users.findIndex(u => u.id === user.id);
       if (userIndex !== -1) {
         data.users[userIndex] = {
           ...user,
           status: 'active',
-          hostelId: hostelId,
-          hostelName: originalItem.hostelName,
           approvedAt: new Date().toISOString()
         };
-        console.log('Successfully updated user with hostelId:', hostelId);
+        console.log('Successfully updated user status to active, hostelId remains:', user.hostelId);
       }
     } else {
       // Create new admin user if not found
