@@ -1259,7 +1259,8 @@ entities.forEach(entity => {
         rooms: ['roomNumber'],
         users: ['email'], // Global for users
         staff: ['phone', 'email'],
-        hostels: ['name'] // Global for hostels
+        hostels: ['name'], // Global for hostels - will throw error for duplicates
+        hostelRequests: ['hostelName'] // Check for duplicate hostel requests
       };
       
       const fieldsToCheck = uniqueFields[entity] || [];
