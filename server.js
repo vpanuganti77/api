@@ -7,7 +7,7 @@ const http = require('http');
 const webpush = require('web-push');
 const multer = require('multer');
 
-// Configure multer for file uploads
+// Configure multer for file uploadss
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, 'uploads/complaints/');
