@@ -863,7 +863,16 @@ app.post('/api/hostelRequests/:id/approve', async (req, res) => {
       updatedAt: new Date().toISOString()
     };
     
-    // Create hostel entry
+    // Check if hostel name already exists
+    const existingHostel = data.hostels.find(h => 
+      h.name.toLowerCase() === updatedItem.hostelName.toLowerCase()
+    );
+    
+    if (existingHostel) {
+      return res.status(400).json({ error: 'Hostel name already exists' });
+    }
+    
+    // Create hostel entry without timestamp
     const newHostel = {
       id: Date.now().toString(),
       name: updatedItem.hostelName,
@@ -892,7 +901,7 @@ app.post('/api/hostelRequests/:id/approve', async (req, res) => {
       role: 'admin',
       password: password,
       hostelId: newHostel.id,
-      hostelName: newHostel.name,
+      hostelName: newHostel.displayName,
       status: 'active',
       firstLogin: true,
       createdAt: new Date().toISOString(),
