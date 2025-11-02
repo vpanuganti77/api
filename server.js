@@ -863,59 +863,128 @@ app.post('/api/hostelRequests/:id/approve', async (req, res) => {
       updatedAt: new Date().toISOString()
     };
     
-    // Check if hostel name already exists
+    // Check if hostel already exists
     const existingHostel = data.hostels.find(h => 
-      h.name.toLowerCase() === updatedItem.hostelName.toLowerCase()
+      h.contactEmail === originalItem.email || h.name === originalItem.hostelName
     );
     
+    let hostel;
+    let hostelId;
+    
     if (existingHostel) {
-      return res.status(400).json({ error: 'Hostel name already exists' });
+      console.log('Using existing hostel:', existingHostel);
+      hostel = existingHostel;
+      hostelId = existingHostel.id;
+    } else {
+      // Create hostel entry without timestamp
+      hostelId = `hostel_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      
+      const cleanHostelName = originalItem.hostelName.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 10);
+      const hostelDomain = cleanHostelName + '.com';
+      const username = originalItem.name.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 8);
+      const hostelContactEmail = `${username}@${hostelDomain}`;
+      
+      const hostelData = {
+        id: hostelId,
+        name: originalItem.hostelName,
+        displayName: originalItem.hostelName,
+        address: originalItem.address,
+        contactPerson: originalItem.name,
+        contactEmail: hostelContactEmail,
+        originalContactEmail: originalItem.email,
+        contactPhone: originalItem.phone,
+        planType: originalItem.planType || 'free_trial',
+        status: 'active',
+        trialExpiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        createdAt: new Date().toISOString(),
+        createdBy: 'Master Admin'
+      };
+      
+      data.hostels.push(hostelData);
+      hostel = hostelData;
+      console.log('Created new hostel:', hostel);
     }
     
-    // Create hostel entry without timestamp
-    const newHostel = {
-      id: Date.now().toString(),
-      name: updatedItem.hostelName,
-      displayName: updatedItem.hostelName,
-      address: updatedItem.address,
-      phone: updatedItem.phone,
-      email: updatedItem.email,
-      status: 'active',
-      planType: updatedItem.planType || 'free_trial',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-    data.hostels.push(newHostel);
+    // Find and update existing user (created during request submission)
+    console.log('Looking for user with request:', {
+      requestId: originalItem.id,
+      requestEmail: originalItem.email,
+      requestName: originalItem.name,
+      hostelName: originalItem.hostelName
+    });
     
-    // Create admin user for the hostel
-    const cleanHostelName = updatedItem.hostelName.replace(/_\d+$/, '').replace(/[^a-zA-Z]/g, '');
-    const hostelDomain = cleanHostelName.toLowerCase() + '.com';
-    const username = updatedItem.name.toLowerCase().replace(/[^a-z0-9]/g, '');
-    const password = 'admin' + Math.random().toString(36).substring(2, 8);
+    // Try multiple search strategies to find the user
+    let user = data.users.find((u) => u.requestId === originalItem.id);
     
-    const adminUser = {
-      id: (Date.now() + 1).toString(),
-      name: updatedItem.name,
-      email: `${username}@${hostelDomain}`,
-      phone: updatedItem.phone,
-      role: 'admin',
-      password: password,
-      hostelId: newHostel.id,
-      hostelName: newHostel.displayName,
-      status: 'active',
-      firstLogin: true,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-    data.users.push(adminUser);
+    if (!user) {
+      user = data.users.find((u) => u.originalEmail === originalItem.email);
+    }
     
-    // Add login credentials to the hostel request
+    if (!user) {
+      user = data.users.find((u) => 
+        u.name === originalItem.name && u.hostelName === originalItem.hostelName
+      );
+    }
+    
+    if (!user) {
+      // Generate hostel domain email and search by that
+      const cleanHostelName = originalItem.hostelName.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 10);
+      const hostelDomain = cleanHostelName + '.com';
+      const username = originalItem.name.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 8);
+      const expectedEmail = `${username}@${hostelDomain}`;
+      user = data.users.find((u) => u.email === expectedEmail);
+    }
+    
+    console.log('Found user:', user);
+    
+    if (user) {
+      // Update user with correct hostelId
+      const userIndex = data.users.findIndex(u => u.id === user.id);
+      if (userIndex !== -1) {
+        data.users[userIndex] = {
+          ...user,
+          status: 'active',
+          hostelId: hostelId,
+          hostelName: originalItem.hostelName,
+          approvedAt: new Date().toISOString()
+        };
+        console.log('Successfully updated user with hostelId:', hostelId);
+      }
+    } else {
+      // Create new admin user if not found
+      const cleanHostelName = originalItem.hostelName.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 10);
+      const hostelDomain = cleanHostelName + '.com';
+      const username = originalItem.name.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 8);
+      const password = 'admin' + Math.random().toString(36).substring(2, 8);
+      
+      const adminUser = {
+        id: (Date.now() + 1).toString(),
+        name: originalItem.name,
+        email: `${username}@${hostelDomain}`,
+        originalEmail: originalItem.email,
+        phone: originalItem.phone,
+        role: 'admin',
+        password: password,
+        hostelId: hostelId,
+        hostelName: originalItem.hostelName,
+        status: 'active',
+        firstLogin: true,
+        requestId: originalItem.id,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      data.users.push(adminUser);
+      user = adminUser;
+      console.log('Created new admin user with hostelId:', hostelId);
+    }
+    
+    // Update request status
+    updatedItem.hostelId = hostelId;
     updatedItem.userCredentials = {
-      email: adminUser.email,
-      password: password,
-      loginUrl: `https://pgflow.netlify.app/login?email=${encodeURIComponent(adminUser.email)}&password=${encodeURIComponent(password)}`
+      email: user.email,
+      password: user.password,
+      loginUrl: `https://pgflow.netlify.app/login?email=${encodeURIComponent(user.email)}&password=${encodeURIComponent(user.password)}`
     };
-    updatedItem.hostelId = newHostel.id;
     
     data.hostelRequests[index] = updatedItem;
     await writeData(data);
@@ -1140,7 +1209,17 @@ entities.forEach(entity => {
   app.get(`/api/${entity}`, async (req, res) => {
     try {
       const data = await readData();
-      res.json(data[entity] || []);
+      let result = data[entity] || [];
+      
+      // Ensure hostels have displayName for frontend compatibility
+      if (entity === 'hostels') {
+        result = result.map(hostel => ({
+          ...hostel,
+          displayName: hostel.displayName || hostel.name
+        }));
+      }
+      
+      res.json(result);
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
@@ -1189,7 +1268,10 @@ entities.forEach(entity => {
       
       // Auto-create user account for tenants
       if (entity === 'tenants') {
+        console.log('Tenant creation - looking for hostel with ID:', newItem.hostelId);
         const hostel = data.hostels.find(h => h.id === newItem.hostelId);
+        console.log('Found hostel:', hostel ? hostel.name : 'NOT FOUND');
+        
         if (hostel) {
           // Clean hostel name - remove timestamp and special characters
           let cleanHostelName = (hostel.displayName || hostel.name).replace(/_\d+$/, '').replace(/[^a-zA-Z]/g, '');
@@ -1212,13 +1294,15 @@ entities.forEach(entity => {
             updatedAt: new Date().toISOString()
           };
           
-          console.log('Creating tenant user with hostelId:', tenantUser.hostelId);
+          console.log('Creating tenant user:', tenantUser.name, 'with email:', tenantUser.email);
           data.users.push(tenantUser);
           newItem.userCredentials = {
             email: tenantUser.email,
             password: password,
             loginUrl: `https://pgflow.netlify.app/login?email=${encodeURIComponent(tenantUser.email)}&password=${encodeURIComponent(password)}`
           };
+        } else {
+          console.error('Hostel not found for tenant creation. Available hostels:', data.hostels.map(h => ({ id: h.id, name: h.name })));
         }
         
         // Calculate next due date based on joining date (monthly cycle)
