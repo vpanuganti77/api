@@ -863,49 +863,6 @@ app.post('/api/hostelRequests/:id/approve', async (req, res) => {
       updatedAt: new Date().toISOString()
     };
     
-    // Check if hostel already exists
-    const existingHostel = data.hostels.find(h => 
-      h.contactEmail === originalItem.email || h.name === originalItem.hostelName
-    );
-    
-    let hostel;
-    let hostelId;
-    
-    if (existingHostel) {
-      console.log('Using existing hostel:', existingHostel);
-      hostel = existingHostel;
-      hostelId = existingHostel.id;
-    } else {
-      // Use hostelId from request (generated during setup)
-      hostelId = originalItem.hostelId;
-      console.log('Using hostelId from request:', hostelId);
-      
-      const cleanHostelName = originalItem.hostelName.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 10);
-      const hostelDomain = cleanHostelName + '.com';
-      const username = originalItem.name.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 8);
-      const hostelContactEmail = `${username}@${hostelDomain}`;
-      
-      const hostelData = {
-        id: hostelId,
-        name: originalItem.hostelName,
-        displayName: originalItem.hostelName,
-        address: originalItem.address,
-        contactPerson: originalItem.name,
-        contactEmail: hostelContactEmail,
-        originalContactEmail: originalItem.email,
-        contactPhone: originalItem.phone,
-        planType: originalItem.planType || 'free_trial',
-        status: 'active',
-        trialExpiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-        createdAt: new Date().toISOString(),
-        createdBy: 'Master Admin'
-      };
-      
-      data.hostels.push(hostelData);
-      hostel = hostelData;
-      console.log('Created new hostel:', hostel);
-    }
-    
     // Find and update existing user (created during request submission)
     console.log('Looking for user with request:', {
       requestId: originalItem.id,
@@ -948,6 +905,36 @@ app.post('/api/hostelRequests/:id/approve', async (req, res) => {
           approvedAt: new Date().toISOString()
         };
         console.log('Successfully updated user status to active, hostelId remains:', user.hostelId);
+        
+        // Now create hostel using user's hostelId
+        const existingHostel = data.hostels.find(h => h.id === user.hostelId);
+        let hostel;
+        
+        if (!existingHostel) {
+          const cleanHostelName = originalItem.hostelName.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 10);
+          const hostelDomain = cleanHostelName + '.com';
+          const username = originalItem.name.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 8);
+          const hostelContactEmail = `${username}@${hostelDomain}`;
+          
+          const hostelData = {
+            id: user.hostelId,
+            name: originalItem.hostelName,
+            displayName: originalItem.hostelName,
+            address: originalItem.address,
+            contactPerson: originalItem.name,
+            contactEmail: hostelContactEmail,
+            originalContactEmail: originalItem.email,
+            contactPhone: originalItem.phone,
+            planType: originalItem.planType || 'free_trial',
+            status: 'active',
+            trialExpiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+            createdAt: new Date().toISOString(),
+            createdBy: 'Master Admin'
+          };
+          
+          data.hostels.push(hostelData);
+          hostel = hostelData;
+        }
       }
     } else {
       // Create new admin user if not found
@@ -978,7 +965,7 @@ app.post('/api/hostelRequests/:id/approve', async (req, res) => {
     }
     
     // Update request status
-    updatedItem.hostelId = hostelId;
+    updatedItem.hostelId = user.hostelId;
     updatedItem.userCredentials = {
       email: user.email,
       password: user.password,
