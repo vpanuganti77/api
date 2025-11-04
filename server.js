@@ -913,15 +913,16 @@ app.post('/api/hostelRequests/:id/approve', async (req, res) => {
     // Use existing user's hostelId for consistency
     const hostelId = user.hostelId;
     
-    // Update user status to active
+    // Update user status to active and ensure hostelId matches the hostel being created
     const userIndex = data.users.findIndex(u => u.id === user.id);
     if (userIndex !== -1) {
       data.users[userIndex] = {
         ...user,
+        hostelId: user.hostelId, // Keep the original hostelId from user
         status: 'active',
         approvedAt: new Date().toISOString()
       };
-      console.log('Updated user status to active, keeping hostelId:', hostelId);
+      console.log('Updated user status to active, hostelId:', user.hostelId);
     }
     
     // Create hostel with user's existing hostelId
@@ -930,9 +931,11 @@ app.post('/api/hostelRequests/:id/approve', async (req, res) => {
     const username = originalItem.name.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 8);
     const hostelContactEmail = `${username}@${hostelDomain}`;
     
-    // CRITICAL: Create hostel with user's EXACT hostelId - DO NOT use generateId
+    // FINAL FIX: Force hostel ID to match user's hostelId
+    const targetHostelId = user.hostelId;
+    
     const hostelData = {
-      id: user.hostelId, // MUST be user's hostelId
+      id: targetHostelId,
       name: originalItem.hostelName,
       displayName: originalItem.hostelName,
       address: originalItem.address,
@@ -950,12 +953,14 @@ app.post('/api/hostelRequests/:id/approve', async (req, res) => {
       updatedAt: new Date().toISOString()
     };
     
-    // Directly add to hostels array without any ID modification
     data.hostels.push(hostelData);
-    console.log('HOSTEL CREATED WITH EXACT ID:', user.hostelId, 'HOSTEL DATA:', hostelData);
+    
+    // FORCE the hostel ID after push (in case something modifies it)
+    const addedHostel = data.hostels[data.hostels.length - 1];
+    addedHostel.id = targetHostelId;
     
     // Update request status with the same hostelId used for hostel creation
-    updatedItem.hostelId = user.hostelId;
+    updatedItem.hostelId = targetHostelId;
     updatedItem.userCredentials = {
       email: user.email,
       password: user.password,
