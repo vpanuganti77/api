@@ -1345,6 +1345,35 @@ entities.forEach(entity => {
       await writeData(data);
       
       if (entity === 'hostelRequests') {
+        // Create user account for hostel admin during request submission
+        const cleanHostelName = newItem.hostelName.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 10);
+        const hostelDomain = cleanHostelName + '.com';
+        const username = newItem.name.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 8);
+        const password = Math.random().toString(36).substring(2, 8);
+        
+        // Generate a consistent hostelId that will be used for both user and future hostel
+        const hostelId = newItem.id; // Use request ID as hostelId for consistency
+        
+        const adminUser = {
+          id: (Date.now() + 1).toString(),
+          name: newItem.name,
+          email: `${username}@${hostelDomain}`,
+          originalEmail: newItem.email,
+          phone: newItem.phone,
+          role: 'admin',
+          password: password,
+          hostelId: hostelId,
+          hostelName: newItem.hostelName,
+          status: 'pending_approval',
+          firstLogin: true,
+          requestId: newItem.id,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+        
+        data.users.push(adminUser);
+        newItem.tempPassword = password;
+        
         // Notify master admin of new hostel requests
         const masterAdminNotification = {
           type: 'hostelRequest',
