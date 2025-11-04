@@ -169,10 +169,21 @@ const initializeData = async () => {
       notices: [],
       checkoutRequests: [],
       hostelSettings: [],
-      supportTickets: []
+      supportTickets: [],
+      _sequence: { nextId: 1 }
     };
     await fs.writeFile(DATA_FILE, JSON.stringify(initialData, null, 2));
   }
+};
+
+// Generate sequential ID
+const generateId = (data) => {
+  if (!data._sequence) {
+    data._sequence = { nextId: 1 };
+  }
+  const id = data._sequence.nextId.toString();
+  data._sequence.nextId++;
+  return id;
 };
 
 // Robust read operations with corruption handling
@@ -771,7 +782,7 @@ app.post('/api/complaints/:id/comments', async (req, res) => {
     
     // Add new comment
     const newComment = {
-      id: Date.now().toString(),
+      id: generateId(data),
       comment,
       author,
       role,
@@ -988,7 +999,7 @@ app.post('/api/complaints', upload.array('attachments', 5), async (req, res) => 
     
     const newItem = { 
       ...req.body, 
-      id: Date.now().toString(),
+      id: generateId(data),
       attachments: attachments,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
@@ -1092,7 +1103,7 @@ app.put('/api/complaints/:id', async (req, res) => {
       }
       
       const resolvedComment = {
-        id: Date.now().toString(),
+        id: generateId(data),
         comment: 'Complaint has been marked as resolved by admin.',
         author: 'Admin',
         role: 'admin',
@@ -1198,7 +1209,7 @@ entities.forEach(entity => {
         data[entity] = [];
       }
       
-      const itemId = Date.now().toString();
+      const itemId = generateId(data);
       const newItem = { 
         ...req.body, 
         id: itemId,
@@ -1243,7 +1254,7 @@ entities.forEach(entity => {
           const password = 'tenant' + Math.random().toString(36).substring(2, 8);
           
           const tenantUser = {
-            id: (Date.now() + 1).toString(),
+            id: generateId(data),
             name: newItem.name,
             email: `${username}@${hostelDomain}`,
             phone: newItem.phone,
@@ -1318,7 +1329,7 @@ entities.forEach(entity => {
         const password = Math.random().toString(36).substring(2, 8);
         
         const adminUser = {
-          id: (Date.now() + 1).toString(),
+          id: generateId(data),
           name: newItem.name,
           email: `${username}@${hostelDomain}`,
           originalEmail: newItem.email,
