@@ -930,26 +930,33 @@ app.post('/api/hostelRequests/:id/approve', async (req, res) => {
     const username = originalItem.name.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 8);
     const hostelContactEmail = `${username}@${hostelDomain}`;
     
-    const hostelData = {
-      id: user.hostelId, // Use user's exact hostelId
-      name: originalItem.hostelName,
-      displayName: originalItem.hostelName,
-      address: originalItem.address,
-      contactPerson: originalItem.name,
-      contactEmail: hostelContactEmail,
-      originalContactEmail: originalItem.email,
-      contactPhone: originalItem.phone,
-      planType: originalItem.planType || 'free_trial',
-      status: 'active',
-      domain: hostelDomain,
-      allowedDomains: [hostelDomain],
-      trialExpiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-      createdAt: new Date().toISOString(),
-      createdBy: 'Master Admin',
-      updatedAt: new Date().toISOString()
-    };
-    
-    data.hostels.push(hostelData);
+    // Check if hostel already exists
+    const existingHostel = data.hostels.find(h => h.id === user.hostelId);
+    if (!existingHostel) {
+      const hostelData = {
+        id: user.hostelId, // Use user's exact hostelId
+        name: originalItem.hostelName,
+        displayName: originalItem.hostelName,
+        address: originalItem.address,
+        contactPerson: originalItem.name,
+        contactEmail: hostelContactEmail,
+        originalContactEmail: originalItem.email,
+        contactPhone: originalItem.phone,
+        planType: originalItem.planType || 'free_trial',
+        status: 'active',
+        domain: hostelDomain,
+        allowedDomains: [hostelDomain],
+        trialExpiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        createdAt: new Date().toISOString(),
+        createdBy: 'Master Admin',
+        updatedAt: new Date().toISOString()
+      };
+      
+      data.hostels.push(hostelData);
+      console.log('Created hostel with ID:', user.hostelId);
+    } else {
+      console.log('Hostel already exists with ID:', user.hostelId);
+    }
     
     // Update request status with the same hostelId used for hostel creation
     updatedItem.hostelId = user.hostelId;
