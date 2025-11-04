@@ -895,49 +895,25 @@ app.post('/api/hostelRequests/:id/approve', async (req, res) => {
     
     console.log('Found user:', user);
     
-    // Generate consistent hostelId for this approval
-    const hostelId = Date.now().toString();
-    
-    if (user) {
-      // Update user with new consistent hostelId
-      const userIndex = data.users.findIndex(u => u.id === user.id);
-      if (userIndex !== -1) {
-        data.users[userIndex] = {
-          ...user,
-          hostelId: hostelId,
-          status: 'active',
-          approvedAt: new Date().toISOString()
-        };
-        console.log('Updated user with consistent hostelId:', hostelId);
-      }
-    } else {
-      // Create new admin user
-      const cleanHostelName = originalItem.hostelName.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 10);
-      const hostelDomain = cleanHostelName + '.com';
-      const username = originalItem.name.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 8);
-      const password = 'admin' + Math.random().toString(36).substring(2, 8);
-      
-      user = {
-        id: (Date.now() + 1).toString(),
-        name: originalItem.name,
-        email: `${username}@${hostelDomain}`,
-        originalEmail: originalItem.email,
-        phone: originalItem.phone,
-        role: 'admin',
-        password: password,
-        hostelId: hostelId,
-        hostelName: originalItem.hostelName,
-        status: 'active',
-        firstLogin: true,
-        requestId: originalItem.id,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      };
-      data.users.push(user);
-      console.log('Created new admin user with hostelId:', hostelId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found for this request' });
     }
     
-    // Create hostel with same ID
+    // Use existing user's hostelId for consistency
+    const hostelId = user.hostelId;
+    
+    // Update user status to active
+    const userIndex = data.users.findIndex(u => u.id === user.id);
+    if (userIndex !== -1) {
+      data.users[userIndex] = {
+        ...user,
+        status: 'active',
+        approvedAt: new Date().toISOString()
+      };
+      console.log('Updated user status to active, keeping hostelId:', hostelId);
+    }
+    
+    // Create hostel with user's existing hostelId
     const cleanHostelName = originalItem.hostelName.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 10);
     const hostelDomain = cleanHostelName + '.com';
     const username = originalItem.name.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 8);
