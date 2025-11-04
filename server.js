@@ -920,7 +920,7 @@ app.post('/api/hostelRequests/:id/approve', async (req, res) => {
     const hostelContactEmail = `${username}@${hostelDomain}`;
     
     const hostelData = {
-      id: hostelId, // MUST use user's existing hostelId
+      id: user.hostelId, // Use user's exact hostelId
       name: originalItem.hostelName,
       displayName: originalItem.hostelName,
       address: originalItem.address,
@@ -941,7 +941,7 @@ app.post('/api/hostelRequests/:id/approve', async (req, res) => {
     data.hostels.push(hostelData);
     
     // Update request status with the same hostelId used for hostel creation
-    updatedItem.hostelId = hostelId;
+    updatedItem.hostelId = user.hostelId;
     updatedItem.userCredentials = {
       email: user.email,
       password: user.password,
