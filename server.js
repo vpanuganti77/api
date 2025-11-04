@@ -895,55 +895,29 @@ app.post('/api/hostelRequests/:id/approve', async (req, res) => {
     
     console.log('Found user:', user);
     
+    // Generate consistent hostelId for this approval
+    const hostelId = Date.now().toString();
+    
     if (user) {
-      // Update user status only - keep existing hostelId
+      // Update user with new consistent hostelId
       const userIndex = data.users.findIndex(u => u.id === user.id);
       if (userIndex !== -1) {
         data.users[userIndex] = {
           ...user,
+          hostelId: hostelId,
           status: 'active',
           approvedAt: new Date().toISOString()
         };
-        console.log('Successfully updated user status to active, hostelId remains:', user.hostelId);
-        
-        // Now create hostel using user's hostelId
-        const existingHostel = data.hostels.find(h => h.id === user.hostelId);
-        let hostel;
-        
-        if (!existingHostel) {
-          const cleanHostelName = originalItem.hostelName.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 10);
-          const hostelDomain = cleanHostelName + '.com';
-          const username = originalItem.name.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 8);
-          const hostelContactEmail = `${username}@${hostelDomain}`;
-          
-          const hostelData = {
-            id: user.hostelId,
-            name: originalItem.hostelName,
-            displayName: originalItem.hostelName,
-            address: originalItem.address,
-            contactPerson: originalItem.name,
-            contactEmail: hostelContactEmail,
-            originalContactEmail: originalItem.email,
-            contactPhone: originalItem.phone,
-            planType: originalItem.planType || 'free_trial',
-            status: 'active',
-            trialExpiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-            createdAt: new Date().toISOString(),
-            createdBy: 'Master Admin'
-          };
-          
-          data.hostels.push(hostelData);
-          hostel = hostelData;
-        }
+        console.log('Updated user with consistent hostelId:', hostelId);
       }
     } else {
-      // Create new admin user if not found
+      // Create new admin user
       const cleanHostelName = originalItem.hostelName.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 10);
       const hostelDomain = cleanHostelName + '.com';
       const username = originalItem.name.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 8);
       const password = 'admin' + Math.random().toString(36).substring(2, 8);
       
-      const adminUser = {
+      user = {
         id: (Date.now() + 1).toString(),
         name: originalItem.name,
         email: `${username}@${hostelDomain}`,
@@ -951,7 +925,7 @@ app.post('/api/hostelRequests/:id/approve', async (req, res) => {
         phone: originalItem.phone,
         role: 'admin',
         password: password,
-        hostelId: originalItem.hostelId,
+        hostelId: hostelId,
         hostelName: originalItem.hostelName,
         status: 'active',
         firstLogin: true,
@@ -959,13 +933,39 @@ app.post('/api/hostelRequests/:id/approve', async (req, res) => {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       };
-      data.users.push(adminUser);
-      user = adminUser;
-      console.log('Created new admin user with hostelId:', originalItem.hostelId);
+      data.users.push(user);
+      console.log('Created new admin user with hostelId:', hostelId);
     }
     
+    // Create hostel with same ID
+    const cleanHostelName = originalItem.hostelName.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 10);
+    const hostelDomain = cleanHostelName + '.com';
+    const username = originalItem.name.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 8);
+    const hostelContactEmail = `${username}@${hostelDomain}`;
+    
+    const hostelData = {
+      id: hostelId,
+      name: originalItem.hostelName,
+      displayName: originalItem.hostelName,
+      address: originalItem.address,
+      contactPerson: originalItem.name,
+      contactEmail: hostelContactEmail,
+      originalContactEmail: originalItem.email,
+      contactPhone: originalItem.phone,
+      planType: originalItem.planType || 'free_trial',
+      status: 'active',
+      domain: hostelDomain,
+      allowedDomains: [hostelDomain],
+      trialExpiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      createdAt: new Date().toISOString(),
+      createdBy: 'Master Admin',
+      updatedAt: new Date().toISOString()
+    };
+    
+    data.hostels.push(hostelData);
+    
     // Update request status
-    updatedItem.hostelId = user.hostelId;
+    updatedItem.hostelId = hostelId;
     updatedItem.userCredentials = {
       email: user.email,
       password: user.password,
