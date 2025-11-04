@@ -1308,38 +1308,8 @@ entities.forEach(entity => {
         }
       }
       
-      // Check unique constraints within hostel scope
-      const uniqueFields = {
-        tenants: ['email', 'phone', 'aadharNumber'],
-        rooms: ['roomNumber'],
-        users: ['email'], // Global for users
-        staff: ['phone', 'email']
-        // Removed hostels and hostelRequests uniqueness to prevent timestamp addition
-      };
-      
-      const fieldsToCheck = uniqueFields[entity] || [];
-      for (const field of fieldsToCheck) {
-        if (newItem[field]) {
-          const existing = data[entity].find(item => {
-            // For global entities (users, hostels), check globally
-            if (['users', 'hostels'].includes(entity)) {
-              return item[field]?.toLowerCase() === newItem[field]?.toLowerCase();
-            }
-            // For hostel-scoped entities, check within same hostel
-            return item[field]?.toLowerCase() === newItem[field]?.toLowerCase() && 
-                   item.hostelId === newItem.hostelId;
-          });
-          
-          if (existing) {
-            const scope = ['users', 'hostels'].includes(entity) ? '' : ' in this hostel';
-            return res.status(400).json({ 
-              error: `${field.charAt(0).toUpperCase() + field.slice(1)} already exists${scope}` 
-            });
-          }
-        }
-      }
-      
       if (entity === 'hostelRequests') {
+        // Skip unique constraint check for hostelRequests as we create users automatically
         // Create user account for hostel admin during request submission
         const cleanHostelName = newItem.hostelName.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 10);
         const hostelDomain = cleanHostelName + '.com';
@@ -1365,6 +1335,36 @@ entities.forEach(entity => {
         
         data.users.push(adminUser);
         newItem.tempPassword = password;
+      } else {
+        // Check unique constraints for other entities
+        const uniqueFields = {
+          tenants: ['email', 'phone', 'aadharNumber'],
+          rooms: ['roomNumber'],
+          users: ['email'], // Global for users
+          staff: ['phone', 'email']
+        };
+        
+        const fieldsToCheck = uniqueFields[entity] || [];
+        for (const field of fieldsToCheck) {
+          if (newItem[field]) {
+            const existing = data[entity].find(item => {
+              // For global entities (users, hostels), check globally
+              if (['users', 'hostels'].includes(entity)) {
+                return item[field]?.toLowerCase() === newItem[field]?.toLowerCase();
+              }
+              // For hostel-scoped entities, check within same hostel
+              return item[field]?.toLowerCase() === newItem[field]?.toLowerCase() && 
+                     item.hostelId === newItem.hostelId;
+            });
+            
+            if (existing) {
+              const scope = ['users', 'hostels'].includes(entity) ? '' : ' in this hostel';
+              return res.status(400).json({ 
+                error: `${field.charAt(0).toUpperCase() + field.slice(1)} already exists${scope}` 
+              });
+            }
+          }
+        }
       }
       
       data[entity].push(newItem);
