@@ -920,7 +920,7 @@ app.post('/api/hostelRequests/:id/approve', async (req, res) => {
     const hostelContactEmail = `${username}@${hostelDomain}`;
     
     const hostelData = {
-      id: hostelId,
+      id: hostelId, // MUST use user's existing hostelId
       name: originalItem.hostelName,
       displayName: originalItem.hostelName,
       address: originalItem.address,
@@ -1198,9 +1198,10 @@ entities.forEach(entity => {
         data[entity] = [];
       }
       
+      const itemId = Date.now().toString();
       const newItem = { 
         ...req.body, 
-        id: Date.now().toString(),
+        id: itemId,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       };
@@ -1324,11 +1325,11 @@ entities.forEach(entity => {
           phone: newItem.phone,
           role: 'admin',
           password: password,
-          hostelId: newItem.id, // Use request ID as hostelId
+          hostelId: itemId, // Use the same itemId
           hostelName: newItem.hostelName,
           status: 'pending_approval',
           firstLogin: true,
-          requestId: newItem.id,
+          requestId: itemId,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         };
