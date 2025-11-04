@@ -940,7 +940,7 @@ app.post('/api/hostelRequests/:id/approve', async (req, res) => {
     
     data.hostels.push(hostelData);
     
-    // Update request status
+    // Update request status with the same hostelId used for hostel creation
     updatedItem.hostelId = hostelId;
     updatedItem.userCredentials = {
       email: user.email,
@@ -1339,20 +1339,12 @@ entities.forEach(entity => {
         }
       }
       
-      data[entity].push(newItem);
-      
-      // Wait for write to complete
-      await writeData(data);
-      
       if (entity === 'hostelRequests') {
         // Create user account for hostel admin during request submission
         const cleanHostelName = newItem.hostelName.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 10);
         const hostelDomain = cleanHostelName + '.com';
         const username = newItem.name.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 8);
         const password = Math.random().toString(36).substring(2, 8);
-        
-        // Generate a consistent hostelId that will be used for both user and future hostel
-        const hostelId = newItem.id; // Use request ID as hostelId for consistency
         
         const adminUser = {
           id: (Date.now() + 1).toString(),
@@ -1362,7 +1354,7 @@ entities.forEach(entity => {
           phone: newItem.phone,
           role: 'admin',
           password: password,
-          hostelId: hostelId,
+          hostelId: newItem.id, // Use request ID as hostelId
           hostelName: newItem.hostelName,
           status: 'pending_approval',
           firstLogin: true,
@@ -1373,6 +1365,14 @@ entities.forEach(entity => {
         
         data.users.push(adminUser);
         newItem.tempPassword = password;
+      }
+      
+      data[entity].push(newItem);
+      
+      // Wait for write to complete
+      await writeData(data);
+      
+      if (entity === 'hostelRequests') {
         
         // Notify master admin of new hostel requests
         const masterAdminNotification = {
