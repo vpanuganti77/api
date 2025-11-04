@@ -961,7 +961,7 @@ app.post('/api/hostelRequests/:id/approve', async (req, res) => {
       };
       data.users.push(adminUser);
       user = adminUser;
-      console.log('Created new admin user with hostelId:', hostelId);
+      console.log('Created new admin user with hostelId:', originalItem.hostelId);
     }
     
     // Update request status
@@ -1582,12 +1582,18 @@ entities.forEach(entity => {
       const originalItem = data[entity][index];
       console.log('Original item:', originalItem);
       
-      const updatedItem = { 
+      let updatedItem = { 
         ...originalItem, 
         ...req.body, 
         id: req.params.id,
         updatedAt: new Date().toISOString()
       };
+      
+      // Protect hostelId from being updated for users
+      if (entity === 'users' && originalItem.hostelId) {
+        updatedItem.hostelId = originalItem.hostelId;
+        console.log('Protected user hostelId from update:', originalItem.hostelId);
+      }
       
       console.log('Updated item:', updatedItem);
       
