@@ -798,56 +798,33 @@ app.post('/api/complaints/:id/comments', async (req, res) => {
     const targetRole = role === 'tenant' ? 'admin' : 'tenant';
     const targetHostelId = role === 'tenant' ? complaint.hostelId : null;
     
-    if (role === 'admin') {
-      // Admin commented, notify the specific tenant
-      const tenant = data.tenants.find(t => t.name === complaint.tenantName && t.hostelId === complaint.hostelId);
-      if (tenant) {
-        const tenantUser = data.users.find(u => u.name === tenant.name && u.role === 'tenant' && u.hostelId === complaint.hostelId);
-        if (tenantUser) {
-          connectedUsers.forEach((userData, ws) => {
-            if (ws.readyState === WebSocket.OPEN && 
-                userData.role === 'tenant' && 
-                userData.hostelId === complaint.hostelId &&
-                userData.name === tenantUser.name) {
-              ws.send(JSON.stringify({ 
-                type: 'notification', 
-                payload: {
-                  type: 'complaint_comment',
-                  title: 'New Comment on Your Complaint',
-                  message: `Admin added a comment to your complaint "${complaint.title}"`,
-                  priority: 'medium',
-                  createdAt: newComment.createdAt,
-                  complaintId: complaint.id,
-                  url: `/tenant/complaints?complaintId=${complaint.id}&openComments=true`
-                }
-              }));
-            }
-          });
-        }
-      }
+    if (role === 'admin' || role === 'receptionist') {
+      // Staff commented, notify the tenant
+      const tenantCommentNotification = {
+        type: 'complaint_comment',
+        title: 'New Response to Your Complaint',
+        message: `${author} responded to your complaint "${complaint.title}": "${comment.substring(0, 100)}${comment.length > 100 ? '...' : ''}"`,
+        priority: 'medium',
+        createdAt: newComment.createdAt,
+        complaintId: complaint.id
+      };
+      
+      await sendNotification(tenantCommentNotification, 'tenant', complaint.hostelId);
+      console.log('💬 Staff comment notification sent to tenant');
     } else {
-      // Tenant commented, notify admin
-      const commentHostel = data.hostels.find(h => h.id === complaint.hostelId);
-      if (commentHostel && commentHostel.contactEmail) {
-        const commentNotification = {
-          type: 'complaint_comment',
-          title: 'New Comment on Complaint',
-          message: `${author} added a comment to complaint "${complaint.title}"`,
-          priority: 'medium',
-          createdAt: newComment.createdAt,
-          complaintId: complaint.id,
-          url: `/admin/complaints?complaintId=${complaint.id}&openComments=true`
-        };
-        
-        connectedUsers.forEach((userData, ws) => {
-          if (ws.readyState === WebSocket.OPEN && 
-              userData.email === commentHostel.contactEmail && 
-              (userData.role === 'admin' || userData.role === 'receptionist')) {
-            ws.send(JSON.stringify({ type: 'notification', payload: commentNotification }));
-            console.log(`Comment notification sent to: ${userData.name} (${userData.email})`);
-          }
-        });
-      }
+      // Tenant commented, notify staff
+      const staffCommentNotification = {
+        type: 'complaint_comment',
+        title: 'New Comment on Complaint',
+        message: `${author} added a comment to complaint "${complaint.title}": "${comment.substring(0, 100)}${comment.length > 100 ? '...' : ''}"`,
+        priority: 'medium',
+        createdAt: newComment.createdAt,
+        complaintId: complaint.id
+      };
+      
+      await sendNotification(staffCommentNotification, 'admin', complaint.hostelId);
+      await sendNotification(staffCommentNotification, 'receptionist', complaint.hostelId);
+      console.log('💬 Tenant comment notification sent to staff');
     }
     
     res.json({ comment: newComment, complaint });
@@ -857,123 +834,217 @@ app.post('/api/complaints/:id/comments', async (req, res) => {
   }
 });
 
-// Approve hostel request endpoint
+// Hostel approval endpoint
 app.post('/api/hostelRequests/:id/approve', async (req, res) => {
   try {
+    console.log('🔄 HOSTEL APPROVAL STARTED for request ID:', req.params.id);
+    console.log('📊 Current time:', new Date().toISOString());
     const data = await readData();
-    const index = data.hostelRequests.findIndex(item => item.id === req.params.id);
+    const requestIndex = data.hostelRequests.findIndex(r => r.id === req.params.id);
     
-    if (index === -1) {
+    if (requestIndex === -1) {
       return res.status(404).json({ error: 'Hostel request not found' });
     }
     
-    const originalItem = data.hostelRequests[index];
-    const updatedItem = { 
-      ...originalItem, 
+    const hostelRequest = data.hostelRequests[requestIndex];
+    console.log('📋 Request details:', { id: hostelRequest.id, hostelId: hostelRequest.hostelId, status: hostelRequest.status });
+    
+    if (hostelRequest.status === 'approved') {
+      console.log('⚠️ Request already approved');
+      return res.status(400).json({ error: 'Request is already approved' });
+    }
+    
+    // Update hostel status to active
+    console.log('🏨 Updating hostel status for hostelId:', hostelRequest.hostelId);
+    console.log('📋 Available hostels:', data.hostels.map(h => ({ id: h.id, name: h.name, status: h.status })));
+    console.log('🔍 Looking for hostel with exact ID match...');
+    
+    let hostelUpdated = false;
+    console.log('🔍 Searching through', data.hostels.length, 'hostels');
+    
+    for (let i = 0; i < data.hostels.length; i++) {
+      console.log(`🔍 Checking hostel ${i}: ID=${data.hostels[i].id}, looking for=${hostelRequest.hostelId}`);
+      if (data.hostels[i].id === hostelRequest.hostelId) {
+        const oldStatus = data.hostels[i].status;
+        data.hostels[i].status = 'active';
+        data.hostels[i].approvedAt = new Date().toISOString();
+        data.hostels[i].updatedAt = new Date().toISOString();
+        console.log(`✅ HOSTEL STATUS UPDATED: ${data.hostels[i].name} (${oldStatus} -> active)`);
+        hostelUpdated = true;
+        break;
+      }
+    }
+    
+    console.log('📊 Hostel update result:', hostelUpdated);
+    
+    if (!hostelUpdated) {
+      console.log('❌ CRITICAL: Hostel not found with ID:', hostelRequest.hostelId);
+      console.log('📋 All hostel IDs:', data.hostels.map(h => h.id));
+      console.log('🔍 Request hostelId type:', typeof hostelRequest.hostelId);
+      console.log('🔍 First hostel ID type:', typeof data.hostels[0]?.id);
+    }
+    
+    // Update user status to active
+    console.log('👤 Updating user status for adminUserId:', hostelRequest.adminUserId);
+    let userUpdated = false;
+    for (let i = 0; i < data.users.length; i++) {
+      if (data.users[i].id === hostelRequest.adminUserId) {
+        const oldStatus = data.users[i].status;
+        data.users[i].status = 'active';
+        data.users[i].approvedAt = new Date().toISOString();
+        data.users[i].updatedAt = new Date().toISOString();
+        console.log(`✅ USER STATUS UPDATED: ${data.users[i].email} (${oldStatus} -> active)`);
+        userUpdated = true;
+        break;
+      }
+    }
+    
+    if (!userUpdated) {
+      console.log('❌ User not found with ID:', hostelRequest.adminUserId);
+    }
+    
+    // Update request status
+    data.hostelRequests[requestIndex] = {
+      ...hostelRequest,
       status: 'approved',
+      approvedAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
     
-    // Find and update existing user (created during request submission)
-    console.log('Looking for user with request:', {
-      requestId: originalItem.id,
-      requestEmail: originalItem.email,
-      requestName: originalItem.name,
-      hostelName: originalItem.hostelName
+    console.log('💾 Writing data to file...');
+    await writeData(data);
+    console.log('✅ Data written successfully');
+    
+    // Send approval notification to the hostel admin
+    const approvedHostel = data.hostels.find(h => 
+      h.id === hostelRequest.hostelId || 
+      String(h.id) === String(hostelRequest.hostelId) ||
+      h.name === hostelRequest.hostelName
+    );
+    
+    if (approvedHostel) {
+      const approvalNotification = {
+        type: 'hostel_approved',
+        title: 'Hostel Setup Approved!',
+        message: `Congratulations! Your hostel "${approvedHostel.displayName || approvedHostel.name}" has been approved by Master Admin. You can now access all features and start managing your hostel.`,
+        priority: 'high',
+        createdAt: new Date().toISOString(),
+        hostelId: approvedHostel.id
+      };
+      
+      // Send notification to hostel admin
+      await sendNotification(approvalNotification, 'admin', approvedHostel.id);
+      console.log('✅ Approval notification sent to hostel admin');
+    }
+    
+    console.log('🎉 HOSTEL APPROVAL COMPLETED SUCCESSFULLY');
+    res.json({ 
+      message: 'Hostel request approved successfully',
+      request: data.hostelRequests[requestIndex],
+      hostelUpdated,
+      userUpdated
     });
     
-    // Try multiple search strategies to find the user
-    let user = data.users.find((u) => u.requestId === originalItem.id);
-    
-    if (!user) {
-      user = data.users.find((u) => u.originalEmail === originalItem.email);
+  } catch (error) {
+    console.error('Error approving hostel request:', error);
+    res.status(500).json({ error: `Failed to approve hostel request: ${error.message}` });
+  }
+});
+
+// Debug endpoint to check approval logic
+app.get('/api/debug/hostel-approval/:requestId', async (req, res) => {
+  try {
+    const data = await readData();
+    const request = data.hostelRequests.find(r => r.id === req.params.requestId);
+    if (!request) {
+      return res.status(404).json({ error: 'Request not found' });
     }
     
-    if (!user) {
-      user = data.users.find((u) => 
-        u.name === originalItem.name && u.hostelName === originalItem.hostelName
-      );
+    const hostel = data.hostels.find(h => h.id === request.hostelId);
+    const user = data.users.find(u => u.id === request.adminUserId);
+    
+    res.json({
+      request: { id: request.id, status: request.status, hostelId: request.hostelId, adminUserId: request.adminUserId },
+      hostel: hostel ? { id: hostel.id, name: hostel.name, status: hostel.status } : null,
+      user: user ? { id: user.id, email: user.email, status: user.status } : null
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Hostel rejection endpoint
+app.post('/api/hostelRequests/:id/reject', async (req, res) => {
+  try {
+    const { reason } = req.body;
+    const data = await readData();
+    const requestIndex = data.hostelRequests.findIndex(r => r.id === req.params.id);
+    
+    if (requestIndex === -1) {
+      return res.status(404).json({ error: 'Hostel request not found' });
     }
     
-    if (!user) {
-      // Generate hostel domain email and search by that
-      const cleanHostelName = originalItem.hostelName.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 10);
-      const hostelDomain = cleanHostelName + '.com';
-      const username = originalItem.name.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 8);
-      const expectedEmail = `${username}@${hostelDomain}`;
-      user = data.users.find((u) => u.email === expectedEmail);
+    const hostelRequest = data.hostelRequests[requestIndex];
+    
+    // Update hostel status to rejected
+    const hostelIndex = data.hostels.findIndex(h => h.id === hostelRequest.hostelId);
+    if (hostelIndex !== -1) {
+      data.hostels[hostelIndex].status = 'rejected';
+      data.hostels[hostelIndex].rejectedAt = new Date().toISOString();
+      data.hostels[hostelIndex].rejectionReason = reason;
+      console.log('Updated hostel status to rejected:', data.hostels[hostelIndex].id);
+    } else {
+      console.log('Hostel not found for request:', hostelRequest.hostelId);
+      console.log('Available hostels:', data.hostels.map(h => ({ id: h.id, name: h.name, status: h.status })));
     }
     
-    console.log('Found user:', user);
-    
-    if (!user) {
-      return res.status(404).json({ error: 'User not found for this request' });
+    // Update user status to rejected - find user by adminUserId or requestId
+    let userIndex = data.users.findIndex(u => u.id === hostelRequest.adminUserId);
+    if (userIndex === -1) {
+      userIndex = data.users.findIndex(u => u.requestId === hostelRequest.id);
     }
-    
-    // Use existing user's hostelId for consistency
-    const hostelId = user.hostelId;
-    
-    // Update user status to active and ensure hostelId matches the hostel being created
-    const userIndex = data.users.findIndex(u => u.id === user.id);
     if (userIndex !== -1) {
-      data.users[userIndex] = {
-        ...user,
-        hostelId: user.hostelId, // Keep the original hostelId from user
-        status: 'active',
-        approvedAt: new Date().toISOString()
-      };
-      console.log('Updated user status to active, hostelId:', user.hostelId);
+      data.users[userIndex].status = 'rejected';
+      data.users[userIndex].rejectedAt = new Date().toISOString();
+    } else {
+      console.log('User not found for hostel request:', hostelRequest.id);
     }
     
-    // Create hostel with user's existing hostelId
-    const cleanHostelName = originalItem.hostelName.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 10);
-    const hostelDomain = cleanHostelName + '.com';
-    const username = originalItem.name.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 8);
-    const hostelContactEmail = `${username}@${hostelDomain}`;
-    
-    // FINAL FIX: Force hostel ID to match user's hostelId
-    const targetHostelId = user.hostelId;
-    
-    const hostelData = {
-      id: targetHostelId,
-      name: originalItem.hostelName,
-      displayName: originalItem.hostelName,
-      address: originalItem.address,
-      contactPerson: originalItem.name,
-      contactEmail: hostelContactEmail,
-      originalContactEmail: originalItem.email,
-      contactPhone: originalItem.phone,
-      planType: originalItem.planType || 'free_trial',
-      status: 'active',
-      domain: hostelDomain,
-      allowedDomains: [hostelDomain],
-      trialExpiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-      createdAt: new Date().toISOString(),
-      createdBy: 'Master Admin',
+    // Update request status
+    data.hostelRequests[requestIndex] = {
+      ...hostelRequest,
+      status: 'rejected',
+      rejectedAt: new Date().toISOString(),
+      rejectionReason: reason,
       updatedAt: new Date().toISOString()
     };
     
-    data.hostels.push(hostelData);
-    
-    // FORCE the hostel ID after push (in case something modifies it)
-    const addedHostel = data.hostels[data.hostels.length - 1];
-    addedHostel.id = targetHostelId;
-    
-    // Update request status with the same hostelId used for hostel creation
-    updatedItem.hostelId = targetHostelId;
-    updatedItem.userCredentials = {
-      email: user.email,
-      password: user.password,
-      loginUrl: `https://pgflow.netlify.app/login?email=${encodeURIComponent(user.email)}&password=${encodeURIComponent(user.password)}`
-    };
-    
-    data.hostelRequests[index] = updatedItem;
     await writeData(data);
     
-    res.json(updatedItem);
+    // Send rejection notification to the hostel admin
+    const rejectedHostel = data.hostels.find(h => h.id === hostelRequest.hostelId);
+    if (rejectedHostel) {
+      const rejectionNotification = {
+        type: 'hostel_rejected',
+        title: 'Hostel Setup Rejected',
+        message: `Your hostel setup request for "${hostelRequest.hostelName}" has been rejected by Master Admin. Reason: ${reason || 'No reason provided'}. Please contact support for assistance.`,
+        priority: 'high',
+        createdAt: new Date().toISOString(),
+        hostelId: rejectedHostel.id
+      };
+      
+      await sendNotification(rejectionNotification, 'admin', rejectedHostel.id);
+      console.log('❌ Rejection notification sent to hostel admin');
+    }
+    
+    res.json({ 
+      message: 'Hostel request rejected successfully',
+      request: data.hostelRequests[requestIndex]
+    });
+    
   } catch (error) {
-    console.error('Approve hostel request error:', error);
-    res.status(500).json({ error: 'Failed to approve hostel request' });
+    console.error('Error rejecting hostel request:', error);
+    res.status(500).json({ error: `Failed to reject hostel request: ${error.message}` });
   }
 });
 
@@ -1021,27 +1092,32 @@ app.post('/api/complaints', upload.array('attachments', 5), async (req, res) => 
     // Initialize comments array
     newItem.comments = [];
     
-    // Send complaint notification directly to hostel contact email
-    const complaintHostel = data.hostels.find(h => h.id === newItem.hostelId);
-    if (complaintHostel && complaintHostel.contactEmail) {
-      const complaintNotification = {
-        type: 'complaint',
-        title: 'New Complaint',
-        message: `${newItem.title} - ${newItem.tenantName}`,
-        priority: newItem.priority || 'medium',
-        createdAt: newItem.createdAt,
-        complaintId: newItem.id
-      };
-      
-      connectedUsers.forEach((userData, ws) => {
-        if (ws.readyState === WebSocket.OPEN && 
-            userData.email === complaintHostel.contactEmail && 
-            (userData.role === 'admin' || userData.role === 'receptionist')) {
-          ws.send(JSON.stringify({ type: 'notification', payload: complaintNotification }));
-          console.log(`Complaint notification sent to: ${userData.name} (${userData.email})`);
-        }
-      });
-    }
+    // Send complaint notification to hostel staff
+    const complaintNotification = {
+      type: 'complaint',
+      title: 'New Complaint Received',
+      message: `New complaint "${newItem.title}" submitted by ${newItem.tenantName}. Priority: ${newItem.priority || 'medium'}. Please review and take appropriate action.`,
+      priority: newItem.priority || 'medium',
+      createdAt: newItem.createdAt,
+      complaintId: newItem.id
+    };
+    
+    await sendNotification(complaintNotification, 'admin', newItem.hostelId);
+    await sendNotification(complaintNotification, 'receptionist', newItem.hostelId);
+    console.log('📢 Complaint notification sent to hostel staff');
+    
+    // Send confirmation to tenant
+    const tenantConfirmation = {
+      type: 'complaint_submitted',
+      title: 'Complaint Submitted',
+      message: `Your complaint "${newItem.title}" has been successfully submitted. Our team will review it and get back to you soon.`,
+      priority: 'low',
+      createdAt: newItem.createdAt,
+      complaintId: newItem.id
+    };
+    
+    await sendNotification(tenantConfirmation, 'tenant', newItem.hostelId);
+    console.log('📝 Complaint confirmation sent to tenant');
     
     console.log('Created complaint:', newItem.id);
     res.json(newItem);
@@ -1306,45 +1382,68 @@ entities.forEach(entity => {
         }
         
         // Send notification to admin when new tenant is added
-        const tenantHostel = data.hostels.find(h => h.id === newItem.hostelId);
-        if (tenantHostel && tenantHostel.contactEmail) {
-          const tenantNotification = {
-            type: 'tenant',
-            title: 'New Tenant Joined',
-            message: `${newItem.name} has joined the hostel in room ${newItem.room}. Welcome the new tenant!`,
-            priority: 'medium',
-            createdAt: new Date().toISOString(),
-            tenantId: newItem.id
-          };
-          
-          connectedUsers.forEach((userData, ws) => {
-            if (ws.readyState === WebSocket.OPEN && 
-                userData.email === tenantHostel.contactEmail && 
-                (userData.role === 'admin' || userData.role === 'receptionist')) {
-              ws.send(JSON.stringify({ type: 'notification', payload: tenantNotification }));
-              console.log(`Tenant notification sent to: ${userData.name} (${userData.email})`);
-            }
-          });
-        }
+        const tenantNotification = {
+          type: 'tenant_joined',
+          title: 'New Tenant Added',
+          message: `${newItem.name} has been added as a new tenant in room ${newItem.room}. Phone: ${newItem.phone}. Please ensure proper onboarding.`,
+          priority: 'medium',
+          createdAt: new Date().toISOString(),
+          tenantId: newItem.id
+        };
+        
+        await sendNotification(tenantNotification, 'admin', newItem.hostelId);
+        await sendNotification(tenantNotification, 'receptionist', newItem.hostelId);
+        console.log('🏠 New tenant notification sent to hostel staff');
+        
+        // Send welcome notification to the new tenant
+        const welcomeNotification = {
+          type: 'welcome',
+          title: 'Welcome to the Hostel!',
+          message: `Welcome ${newItem.name}! You have been successfully registered in room ${newItem.room}. Your login credentials have been provided separately. Contact the front desk for any assistance.`,
+          priority: 'high',
+          createdAt: new Date().toISOString(),
+          tenantId: newItem.id
+        };
+        
+        // Send to the specific tenant (will be delivered when they log in)
+        await sendNotification(welcomeNotification, 'tenant', newItem.hostelId);
+        console.log('👋 Welcome notification prepared for new tenant');
       }
       
       if (entity === 'hostelRequests') {
-        // Skip unique constraint check for hostelRequests as we create users automatically
-        // Create user account for hostel admin during request submission
+        // Create hostel and user account immediately with pending_approval status
+        const hostelId = generateId(data);
         const cleanHostelName = newItem.hostelName.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 10);
         const hostelDomain = cleanHostelName + '.com';
         const username = newItem.name.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 8);
-        const password = Math.random().toString(36).substring(2, 8);
+        const password = 'admin' + Math.random().toString(36).substring(2, 8);
         
+        // Create hostel with pending_approval status
+        const newHostel = {
+          id: hostelId,
+          name: newItem.hostelName,
+          displayName: newItem.hostelName,
+          address: newItem.address,
+          contactEmail: newItem.email,
+          phone: newItem.phone,
+          status: 'pending_approval',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+        
+        data.hostels.push(newHostel);
+        
+        // Create admin user account with hostel domain email
+        const hostelEmail = `${username}@${hostelDomain}`;
         const adminUser = {
           id: generateId(data),
           name: newItem.name,
-          email: `${username}@${hostelDomain}`,
+          email: hostelEmail,
           originalEmail: newItem.email,
           phone: newItem.phone,
           role: 'admin',
           password: password,
-          hostelId: itemId, // Use the same itemId
+          hostelId: hostelId,
           hostelName: newItem.hostelName,
           status: 'pending_approval',
           firstLogin: true,
@@ -1354,7 +1453,15 @@ entities.forEach(entity => {
         };
         
         data.users.push(adminUser);
-        newItem.tempPassword = password;
+        
+        // Add hostelId and user credentials to the request
+        newItem.hostelId = hostelId;
+        newItem.adminUserId = adminUser.id;
+        newItem.userCredentials = {
+          email: hostelEmail,
+          password: password,
+          loginUrl: `https://pgflow.netlify.app/login?email=${encodeURIComponent(hostelEmail)}&password=${encodeURIComponent(password)}`
+        };
       } else {
         // Check unique constraints for other entities
         const uniqueFields = {
@@ -1397,36 +1504,28 @@ entities.forEach(entity => {
         // Notify master admin of new hostel requests
         const masterAdminNotification = {
           type: 'hostelRequest',
-          title: 'New Hostel Request',
-          message: `${newItem.hostelName} - ${newItem.name}`,
-          priority: 'medium',
+          title: 'New Hostel Setup Request',
+          message: `New hostel setup request received from ${newItem.name} for "${newItem.hostelName}". Please review and approve/reject the request.`,
+          priority: 'high',
           createdAt: newItem.createdAt,
           requestId: newItem.id
         };
         
-        connectedUsers.forEach((userData, ws) => {
-          if (ws.readyState === WebSocket.OPEN && userData.role === 'master_admin') {
-            ws.send(JSON.stringify({ type: 'notification', payload: masterAdminNotification }));
-            console.log(`Hostel request notification sent to: ${userData.name}`);
-          }
-        });
+        await sendNotification(masterAdminNotification, 'master_admin', null);
+        console.log('📨 New hostel request notification sent to master admin');
       } else if (entity === 'supportTickets') {
         // Notify master admin of new support tickets
         const supportNotification = {
           type: 'support',
           title: 'New Support Ticket',
-          message: `${newItem.subject} - ${newItem.submittedBy}`,
+          message: `New support ticket: "${newItem.subject}" submitted by ${newItem.submittedBy}. Priority: ${newItem.priority || 'medium'}.`,
           priority: newItem.priority || 'medium',
           createdAt: newItem.createdAt,
           ticketId: newItem.id
         };
         
-        connectedUsers.forEach((userData, ws) => {
-          if (ws.readyState === WebSocket.OPEN && userData.role === 'master_admin') {
-            ws.send(JSON.stringify({ type: 'notification', payload: supportNotification }));
-            console.log(`Support ticket notification sent to: ${userData.name}`);
-          }
-        });
+        await sendNotification(supportNotification, 'master_admin', null);
+        console.log('🎟️ Support ticket notification sent to master admin');
       } else if (entity === 'rooms') {
         // Notify hostel admin when new room is added
         const roomHostel = data.hostels.find(h => h.id === newItem.hostelId);
@@ -1451,26 +1550,31 @@ entities.forEach(entity => {
         }
       } else if (entity === 'checkoutRequests') {
         // Send checkout request notification to admin
-        const checkoutHostel = data.hostels.find(h => h.id === newItem.hostelId);
-        if (checkoutHostel && checkoutHostel.contactEmail) {
-          const checkoutNotification = {
-            type: 'checkout',
-            title: 'Checkout Request',
-            message: `${newItem.tenantName} has requested to checkout from room ${newItem.roomNumber}. Please review the request.`,
-            priority: 'high',
-            createdAt: newItem.createdAt,
-            checkoutId: newItem.id
-          };
-          
-          connectedUsers.forEach((userData, ws) => {
-            if (ws.readyState === WebSocket.OPEN && 
-                userData.email === checkoutHostel.contactEmail && 
-                (userData.role === 'admin' || userData.role === 'receptionist')) {
-              ws.send(JSON.stringify({ type: 'notification', payload: checkoutNotification }));
-              console.log(`Checkout notification sent to: ${userData.name} (${userData.email})`);
-            }
-          });
-        }
+        const checkoutNotification = {
+          type: 'checkout_request',
+          title: 'Checkout Request Received',
+          message: `${newItem.tenantName} has requested to checkout from room ${newItem.roomNumber}. Checkout date: ${newItem.checkoutDate}. Please review and process the request.`,
+          priority: 'high',
+          createdAt: newItem.createdAt,
+          checkoutId: newItem.id
+        };
+        
+        await sendNotification(checkoutNotification, 'admin', newItem.hostelId);
+        await sendNotification(checkoutNotification, 'receptionist', newItem.hostelId);
+        console.log('🚪 Checkout request notification sent to hostel staff');
+        
+        // Send confirmation to tenant
+        const tenantConfirmation = {
+          type: 'checkout_submitted',
+          title: 'Checkout Request Submitted',
+          message: `Your checkout request for room ${newItem.roomNumber} has been submitted successfully. Our team will review it and contact you soon regarding the checkout process.`,
+          priority: 'medium',
+          createdAt: newItem.createdAt,
+          checkoutId: newItem.id
+        };
+        
+        await sendNotification(tenantConfirmation, 'tenant', newItem.hostelId);
+        console.log('📝 Checkout confirmation sent to tenant');
       } else if (entity === 'notices') {
         // Notify all users in the hostel when new notice is posted
         const noticeHostel = data.hostels.find(h => h.id === newItem.hostelId);
@@ -1539,25 +1643,32 @@ entities.forEach(entity => {
         }
       } else if (entity === 'payments') {
         // Notify hostel admin when payment is added
-        const paymentHostel = data.hostels.find(h => h.id === newItem.hostelId);
-        if (paymentHostel && paymentHostel.contactEmail) {
-          const paymentNotification = {
-            type: 'payment_added',
-            title: 'New Payment Added',
-            message: `Payment of ₹${newItem.amount} has been added for ${newItem.tenantName || 'tenant'}.`,
+        const paymentNotification = {
+          type: 'payment_added',
+          title: 'New Payment Recorded',
+          message: `Payment of ₹${newItem.amount} has been recorded for ${newItem.tenantName || 'tenant'}. Payment method: ${newItem.paymentMethod || 'Not specified'}.`,
+          priority: 'medium',
+          createdAt: new Date().toISOString(),
+          paymentId: newItem.id
+        };
+        
+        await sendNotification(paymentNotification, 'admin', newItem.hostelId);
+        await sendNotification(paymentNotification, 'receptionist', newItem.hostelId);
+        console.log('💰 Payment notification sent to hostel staff');
+        
+        // Also notify the tenant about payment confirmation
+        if (newItem.tenantId) {
+          const tenantNotification = {
+            type: 'payment_confirmed',
+            title: 'Payment Recorded',
+            message: `Your payment of ₹${newItem.amount} has been successfully recorded. Thank you for your payment!`,
             priority: 'medium',
             createdAt: new Date().toISOString(),
             paymentId: newItem.id
           };
           
-          connectedUsers.forEach((userData, ws) => {
-            if (ws.readyState === WebSocket.OPEN && 
-                userData.email === paymentHostel.contactEmail && 
-                (userData.role === 'admin' || userData.role === 'receptionist')) {
-              ws.send(JSON.stringify({ type: 'notification', payload: paymentNotification }));
-              console.log(`Payment notification sent to: ${userData.name} (${userData.email})`);
-            }
-          });
+          await sendNotification(tenantNotification, 'tenant', newItem.hostelId);
+          console.log('💳 Payment confirmation sent to tenant');
         }
         
         // Update tenant's next due date when rent is paid
@@ -1626,50 +1737,31 @@ entities.forEach(entity => {
       if (entity === 'payments' && originalItem.status !== updatedItem.status && updatedItem.status === 'approved') {
         console.log(`PAYMENT APPROVED: ${updatedItem.id}`);
         
-        // Notify receptionist
-        const paymentHostel = data.hostels.find(h => h.id === updatedItem.hostelId);
-        if (paymentHostel && paymentHostel.contactEmail) {
-          const approvalNotification = {
-            type: 'payment_approved',
-            title: 'Payment Approved',
-            message: `Payment of ₹${updatedItem.amount} for ${updatedItem.tenantName || 'tenant'} has been approved.`,
-            priority: 'medium',
-            createdAt: new Date().toISOString(),
-            paymentId: updatedItem.id
-          };
-          
-          connectedUsers.forEach((userData, ws) => {
-            if (ws.readyState === WebSocket.OPEN && 
-                userData.email === paymentHostel.contactEmail && 
-                userData.role === 'receptionist') {
-              ws.send(JSON.stringify({ type: 'notification', payload: approvalNotification }));
-              console.log(`Payment approval notification sent to receptionist: ${userData.name}`);
-            }
-          });
-        }
+        // Notify receptionist and admin
+        const approvalNotification = {
+          type: 'payment_approved',
+          title: 'Payment Approved',
+          message: `Payment of ₹${updatedItem.amount} for ${updatedItem.tenantName || 'tenant'} has been approved by admin.`,
+          priority: 'medium',
+          createdAt: new Date().toISOString(),
+          paymentId: updatedItem.id
+        };
+        
+        await sendNotification(approvalNotification, 'receptionist', updatedItem.hostelId);
+        console.log('✅ Payment approval notification sent to receptionist');
         
         // Notify tenant
-        const tenant = data.tenants.find(t => t.id === updatedItem.tenantId);
-        if (tenant) {
-          const tenantUser = data.users.find(u => u.name === tenant.name && u.role === 'tenant');
-          if (tenantUser) {
-            const tenantApprovalNotification = {
-              type: 'payment_approved',
-              title: 'Payment Approved',
-              message: `Your payment of ₹${updatedItem.amount} has been approved. Thank you!`,
-              priority: 'medium',
-              createdAt: new Date().toISOString(),
-              paymentId: updatedItem.id
-            };
-            
-            connectedUsers.forEach((userData, ws) => {
-              if (ws.readyState === WebSocket.OPEN && userData.email === tenantUser.email) {
-                ws.send(JSON.stringify({ type: 'notification', payload: tenantApprovalNotification }));
-                console.log(`Payment approval notification sent to tenant: ${userData.name}`);
-              }
-            });
-          }
-        }
+        const tenantApprovalNotification = {
+          type: 'payment_approved',
+          title: 'Payment Approved',
+          message: `Great news! Your payment of ₹${updatedItem.amount} has been approved. Your account is now up to date.`,
+          priority: 'medium',
+          createdAt: new Date().toISOString(),
+          paymentId: updatedItem.id
+        };
+        
+        await sendNotification(tenantApprovalNotification, 'tenant', updatedItem.hostelId);
+        console.log('💵 Payment approval notification sent to tenant');
       }
       
       // Check unique constraints within hostel scope (excluding current item)
