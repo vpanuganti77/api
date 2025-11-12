@@ -6,6 +6,9 @@ const WebSocket = require('ws');
 const http = require('http');
 const webpush = require('web-push');
 const multer = require('multer');
+const sqlite3 = require('sqlite3').verbose();
+const { open } = require('sqlite');
+const notificationRoutes = require('./routes/notifications');
 
 // Configure multer for file uploadss
 const storage = multer.diskStorage({
@@ -150,6 +153,37 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 app.use(express.json());
+
+// Initialize SQLite database
+let db;
+const initDB = async () => {
+  db = await open({
+    filename: path.join(__dirname, 'hostel.db'),
+    driver: sqlite3.Database
+  });
+  
+  // Create FCM tokens table
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS fcm_tokens (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      userId TEXT NOT NULL,
+      token TEXT NOT NULL,
+      hostelId TEXT NOT NULL,
+      userType TEXT NOT NULL,
+      updatedAt TEXT NOT NULL,
+      UNIQUE(userId)
+    )
+  `);
+};
+
+// Middleware to attach db to requests
+app.use((req, res, next) => {
+  req.db = db;
+  next();
+});
+
+// Use notification routes
+app.use('/api/notifications', notificationRoutes);
 
 // Initialize data file
 const initializeData = async () => {
@@ -1942,9 +1976,10 @@ entities.forEach(entity => {
   });
 });
 
-initializeData().then(() => {
+Promise.all([initializeData(), initDB()]).then(() => {
   server.listen(PORT, "0.0.0.0", () => {
     console.log(`✅ Server running on port ${PORT}`);
+    console.log(`📱 FCM notifications enabled`);
   });
 });
 
